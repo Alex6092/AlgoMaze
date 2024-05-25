@@ -21,9 +21,7 @@ a:hover {
 }
 
 .main-wrapper {
-    width: 512px;
-    padding-left: 1em;
-    padding-right: 1em;
+    width: 98%;
     margin: 0 auto;
 }
 
@@ -61,4 +59,43 @@ li, p {
 
 li {
     margin: 0.5em 0;
+}
+
+
+/* Ajout pour l'éditeur de code */
+
+.main-wrapper {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
+.left-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.right-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    margin-left: 20px;
+}
+.consigne-container {
+    flex: 1;
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin-bottom: 10px;
+    height: 100px; /* Adjust the height as needed */
+    overflow: auto;
+}
+.code-editor-container
+{
+    flex: 2;
+}
+.CodeMirror {
+    height: 400px;
+    width: 100%;
+    border: 1px solid #ccc;
+    overflow: auto;
 }

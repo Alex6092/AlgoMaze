@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Algomaze</title>
+        <meta charset="utf-8">
+        <link rel="stylesheet" href="../styles.css" type="text/css">
+
+        <!-- CodeMirror CSS -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+
+        <script src="../common.js"></script>
+        <script src="algomaze.js"></script>
+        <!-- CodeMirror JS -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+
+        <style>
+            
+        </style>
+    </head>
+
+    <body>
+
+        <header class="main-header">
+            <h1>Bienvenue dans Algomaze</h1>
+        </header>
+
+        <div class="main-wrapper">
+            <div class="left-container">
+                <canvas id="maze" width="768" height="768"></canvas>
+            </div>
+
+            <div class="right-container">
+                <div class="consigne-container"><h2>Consignes</h2>
+                    <p>Vous devez utiliser les fonctions haut(), bas(), droite(), gauche() pour diriger le personnage dans le labyrinthe.</p>
+                </div>
+                <div class="code-editor-container">
+                    <h2>Editeur de code Javascript :</h2>
+                    <textarea id="code-editor">// Votre solution ici ...</textarea>
+                    <button id="run-button">Exécuter la solution</button>
+                </div>
+        </div>
+            
+        </div><!-- main wrapper -->
+
+       
+        <script>
+            document.addEventListener("DOMContentLoaded", function() {
+                var editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+                    lineNumbers: true,
+                    mode: "javascript",
+                    theme: "default"
+                });
+
+                document.getElementById("run-button").addEventListener("click", function() {
+                    var code = editor.getValue();
+                    try {
+                        solve(code);
+                    } catch (e) {
+                        console.error(e);
+                        alert('Error executing script: ' + e.message);
+                    }
+                });
+            });
+        </script>
+
+    </body>
+</html>
