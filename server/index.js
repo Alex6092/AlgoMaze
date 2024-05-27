@@ -3,27 +3,18 @@ import vm from 'node:vm';
 import express from 'express';
 import cors from 'cors';
 import { Direction, SwitchState } from '../shared.js';
+import userRouter from './routes/user.js';
+import redisClient from './redisClient.js';
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use('/user', userRouter);
 const port = 3000;
-
-
-
-// Redis :
-const client = createClient({
-    url: 'redis://default:rootme@192.168.1.49:6379'
-});
-
-client.on('error', err => console.log('Redis Client Error', err));
-
-await client.connect();
-console.log("Redis - connecté");
 
 // API :
 app.get('/levels', async (req, res) => {
     // Request levels list from redis :
-    var result = await client.keys("level:*");
+    var result = await redisClient.keys("level:*");
 
     var sentence = [];
     for(var level of result)
@@ -45,7 +36,15 @@ app.post('/checkanswer', async (req, res) => {
 
     try
     {
-        const result = await checkAnswer("1", code);
+        const result = await checkAnswer(levelId, code);
+
+        // L'utilisateur a réussi le niveau :
+        // On met à jour son progrès et on enregistre sa réponse.
+        if(result)
+        {
+            // TODO ...
+        }
+
         res.send(result);
     }
     catch(error)
@@ -84,7 +83,7 @@ app.listen(port, () => {
 // Utils functions :
 async function loadLevel(levelId)
 {
-    return await client.get("level:" + levelId);
+    return await redisClient.get("level:" + levelId);
 }
 
 async function saveLevel(data, lvlId)
@@ -93,14 +92,14 @@ async function saveLevel(data, lvlId)
     var updateLvlId = false;
     if(levelId == -1)
     {
-        levelId = await client.get('levelid'); // Générer un ID unique pour le niveau
+        levelId = await redisClient.get('levelid'); // Générer un ID unique pour le niveau
         levelId++;
         updateLvlId = true;
     }
 
-    await client.set(`level:${levelId}`, JSON.stringify(data));
+    await redisClient.set(`level:${levelId}`, JSON.stringify(data));
     if(updateLvlId)
-        await client.set('levelid', levelId);
+        await redisClient.set('levelid', levelId);
 
     return levelId;
 }
@@ -293,3 +292,4 @@ async function checkAnswer(levelId, code)
     
     return false;
 }
+

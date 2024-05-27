@@ -295,17 +295,17 @@ Hero.prototype._collide = function (dirx, diry) {
 
 Game.load = function () {
     return [
-        Loader.loadImage('tiles', '../assets/tiles.png'),
+        Loader.loadImage('tiles', './assets/tiles.png'),
 
-        Loader.loadImage('hero_down', '../assets/down.png'),
-        Loader.loadImage('hero_up', '../assets/up.png'),
-        Loader.loadImage('hero_left', '../assets/left.png'),
-        Loader.loadImage('hero_right', '../assets/right.png'),
+        Loader.loadImage('hero_down', './assets/down.png'),
+        Loader.loadImage('hero_up', './assets/up.png'),
+        Loader.loadImage('hero_left', './assets/left.png'),
+        Loader.loadImage('hero_right', './assets/right.png'),
 
-        Loader.loadImage('gem', '../assets/gem.png'),
+        Loader.loadImage('gem', './assets/gem.png'),
 
-        Loader.loadImage('switch_off', '../assets/switch_off.png'),
-        Loader.loadImage('switch_on', '../assets/switch_on.png')
+        Loader.loadImage('switch_off', './assets/switch_off.png'),
+        Loader.loadImage('switch_on', './assets/switch_on.png')
     ];
 };
 

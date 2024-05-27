@@ -87,12 +87,14 @@ li {
     padding: 10px;
     margin-bottom: 10px;
     height: 100px; /* Adjust the height as needed */
+    max-height: 400px;
     overflow: auto;
 }
 .code-editor-container
 {
     flex: 2;
 }
+
 .CodeMirror {
     height: 400px;
     width: 100%;

@@ -198,21 +198,21 @@ var map = {
 
 Game.load = function () {
     return [
-        Loader.loadImage('tiles', '../assets/tiles.png'),
-        Loader.loadImage('hero_down', '../assets/down.png'),
-        Loader.loadImage('hero_up', '../assets/up.png'),
-        Loader.loadImage('hero_left', '../assets/left.png'),
-        Loader.loadImage('hero_right', '../assets/right.png'),
-        Loader.loadImage('gem', '../assets/gem.png'),
-        Loader.loadImage('switch_off', '../assets/switch_off.png'),
-        Loader.loadImage('switch_on', '../assets/switch_on.png'),
+        Loader.loadImage('tiles', './assets/tiles.png'),
+        Loader.loadImage('hero_down', './assets/down.png'),
+        Loader.loadImage('hero_up', './assets/up.png'),
+        Loader.loadImage('hero_left', './assets/left.png'),
+        Loader.loadImage('hero_right', './assets/right.png'),
+        Loader.loadImage('gem', './assets/gem.png'),
+        Loader.loadImage('switch_off', './assets/switch_off.png'),
+        Loader.loadImage('switch_on', './assets/switch_on.png'),
 
-        Loader.loadImage('ground', '../assets/ground.png'),
-        Loader.loadImage('tree_base', '../assets/tree_base.png'),
-        Loader.loadImage('tree_high', '../assets/tree_high.png'),
-        Loader.loadImage('bush', '../assets/bush.png'),
+        Loader.loadImage('ground', './assets/ground.png'),
+        Loader.loadImage('tree_base', './assets/tree_base.png'),
+        Loader.loadImage('tree_high', './assets/tree_high.png'),
+        Loader.loadImage('bush', './assets/bush.png'),
 
-        Loader.loadImage('trash', '../assets/trash.png')
+        Loader.loadImage('trash', './assets/trash.png')
     ];
 };
 
