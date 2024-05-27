@@ -8,6 +8,7 @@
         <!-- CodeMirror CSS -->
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
 
+        <script src="../shared.js"></script>
         <script src="../common.js"></script>
         <script src="algomaze.js"></script>
         <!-- CodeMirror JS -->
@@ -32,20 +33,13 @@
 
             <div class="right-container">
                 <div class="consigne-container"><h2>Consignes</h2>
-                    <p>Votre robot doit allumer tous les interrupteurs et collecter l'ensemble des gemmes pour réussir ce niveau.<br/>
-                        Pour contrôler le robot, vous disposez des instructions suivantes :<br/>
-                        - moveForward() : Permet de faire avancer le robot dans la direction dans laquelle il regarde.<br/>
-                        - turnLeft() : Permet de faire tourner le robot d'un quart de tour sur lui même dans le sens inverse des aiguilles d'une montre.<br/>
-                        - toggleSwitch() : Permet d'inverser l'état d'un interrupteur. <br/>
-                        - collectGem() : Permet de récupérer une gemme.<br/>
-                        <br/>
-                        Pour intéragir avec un interrupteur ou une gemme, le robot doit se trouver sur la case de l'élément interactif.
-                    </p>
+                    <p id="instructions"></p>
                 </div>
                 <div class="code-editor-container">
                     <h2>Editeur de code Javascript :</h2>
                     <textarea id="code-editor">// Votre solution ici ...</textarea>
                     <button id="run-button">Exécuter la solution</button>
+                    <button id="submit-button">Vérifier la solution</button>
                 </div>
         </div>
             
@@ -69,6 +63,30 @@
                         alert('Error executing script: ' + e.message);
                     }
                 });
+
+
+                document.getElementById("submit-button").addEventListener("click", async function() {
+                    var code = editor.getValue();
+                    var levelId = "1"; // replace with the actual level ID
+
+                    try {
+                        let response = await fetch('http://127.0.0.1:3000/checkanswer', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ levelId, code })
+                        });
+
+                        let result = await response.json();
+                        alert("Server response: " + result);
+                    } catch (error) {
+                        console.error('Error:', error);
+                        alert('Error submitting code: ' + error.message);
+                    }
+                });
+
+                loadLevel(1);
             });
         </script>
 

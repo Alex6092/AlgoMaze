@@ -9,6 +9,7 @@
   "author": "Alexandre Gremont",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.19.2",
     "redis": "^4.6.14"
   },

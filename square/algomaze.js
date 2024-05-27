@@ -1,14 +1,3 @@
-const Direction = {
-    Up: 'Up',
-    Down: 'Down',
-    Left: 'Left',
-    Right: 'Right'
-};
-
-const SwitchState = {
-    On: "On",
-    Off: "Off"
-}
 
 function Gem(x, y)
 {
@@ -81,7 +70,7 @@ var map = {
         3, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 3,
         3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 3,
         3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 3,
-        3, 3, 3, 1, 1, 2, 3, 3, 3, 3, 3, 3
+        3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3
     ], [
         4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4,
         4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
@@ -99,6 +88,8 @@ var map = {
 
     switches: [ { x: 128, y: 192, state: false }, { x: 256, y: 192, state: true} ],
     gems: [ { x: 128, y: 64 }],
+    startPosition: { x: 128, y: 128},
+    startDirection: Direction.Down,
     getTile: function (layer, col, row) {
         return this.layers[layer][row * map.cols + col];
     },
@@ -128,13 +119,13 @@ var map = {
     }
 };
 
-function Hero(map, x, y) {
-    this.startX = x;
-    this.startY = y;
-    this.startDirection = Direction.Down;
+function Hero(map) {
+    this.startX = map.startPosition.x + map.tsize / 2;
+    this.startY = map.startPosition.y + map.tsize / 2;
+    this.startDirection = map.startDirection;
     this.map = map;
-    this.x = x;
-    this.y = y;
+    this.x = this.startX;
+    this.y = this.startY;
     this.width = map.tsize;
     this.height = map.tsize;
 
@@ -319,12 +310,12 @@ Game.load = function () {
 };
 
 Game.init = function () {
-    Keyboard.listenForEvents(
-        [Keyboard.LEFT, Keyboard.RIGHT, Keyboard.UP, Keyboard.DOWN]);
+    //Keyboard.listenForEvents(
+    //    [Keyboard.LEFT, Keyboard.RIGHT, Keyboard.UP, Keyboard.DOWN]);
     this.tileAtlas = Loader.getImage('tiles');
 
     this.actionQueue = new Array();
-    this.hero = new Hero(map, 160, 160);
+    this.hero = new Hero(map);
     this.switches = [];
     for(var i = 0; i < map.switches.length; i++)
     {
@@ -561,4 +552,35 @@ function solve(code)
 {
     Game.reset();
     eval(code);
+}
+
+// Load level from API :
+async function loadLevel(levelId) {
+    try {
+        let response = await fetch(`http://127.0.0.1:3000/level/${levelId}`);
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        let data = await response.json();
+        initializeGame(data);
+    } catch (error) {
+        console.error('Error loading level:', error);
+        alert('Error loading level: ' + error.message);
+    }
+}
+
+function initializeGame(data) {
+    map.cols = data.cols;
+    map.rows = data.rows;
+    map.tsize = data.tsize;
+    map.layers = data.layers;
+    map.switches = data.switches;
+    map.gems = data.gems;
+    map.startPosition = data.startPosition;
+    map.startDirection = data.startDirection;
+
+    // Afficher les consignes
+    document.getElementById('instructions').innerHTML = data.instructions;
+
+    Game.init();
 }
