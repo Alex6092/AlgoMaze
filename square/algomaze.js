@@ -415,8 +415,8 @@ Game.update = function (delta) {
 };
 
 Game._drawLayer = function (layer) {
-    for (var c = 0; c <= map.cols; c++) {
-        for (var r = 0; r <= map.rows; r++) {
+    for (var c = 0; c < map.cols; c++) {
+        for (var r = 0; r < map.rows; r++) {
             var tile = map.getTile(layer, c, r);
             var x = c  * map.tsize;
             var y = r  * map.tsize;
