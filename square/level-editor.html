@@ -54,6 +54,17 @@
         .level-list li:hover {
             background-color: #f0f0f0;
         }
+        .selector-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .selector-item {
+            width: 64px;
+            height: 64px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -80,6 +91,10 @@
     <div class="editor-container">
         <h2>Instructions Editor</h2>
         <div id="editor-container"></div>
+        <h2>Element Selector</h2>
+        <div class="selector-container" id="selector-container">
+            <!-- Tiles, gems, switches, and start positions will be added here -->
+        </div>
     </div>
 </div><!-- main wrapper -->
 
@@ -88,7 +103,7 @@
 <script>
     //map = Array.from({ length: mapRows }, () => Array(mapCols).fill(1)); // Default to tile type 1
     let currentLevelId = -1;
-    let currentTileType = 1;
+    var currentTileType = 1;
 
     // Initialize Quill editor
     const quill = new Quill('#editor-container', {
@@ -96,7 +111,6 @@
     });
 
     const canvas = document.getElementById('maze');
-
 
     var startcol;
     var startrow;
@@ -200,6 +214,10 @@
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         ];
+        map.gems = [];
+        map.switches = [];
+        map.startDirection = "Down";
+        map.startPosition = { x: 128, y: 128 };
         quill.root.innerHTML = ''; // Clear instructions
         currentLevelId = -1;
     });
@@ -250,7 +268,7 @@
     }
 
     fetchLevels(); // Load the list of levels when the page loads
-    
+
 </script>
 
 </body>

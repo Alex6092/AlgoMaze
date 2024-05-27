@@ -1,118 +1,170 @@
+//const { Direction } = require("../shared");
 
-function Gem(x, y)
-{
-    this.x = x;
-    this.y = y;
-    this.collected = false;
-    this.image = Loader.getImage('gem');
-}
+function addSelectorItems() {
+    const selectorContainer = document.getElementById('selector-container');
 
-Gem.prototype.getImage = function() {
-    return this.image;
-}
+    // Add tile images
+    const tileImages = ['tiles', 'ground', 'tree_base', 'tree_high', 'bush'];
+    tileImages.forEach((imgName, index) => {
+        const img = Loader.getImage(imgName);
+        const div = document.createElement('div');
+        div.className = 'selector-item';
+        div.style.backgroundImage = `url(${img.src})`;
+        div.addEventListener('click', () => {
+            currentTileType = index + 1;
+        });
+        selectorContainer.appendChild(div);
+    });
 
-Gem.prototype.isCollected = function() {
-    return this.collected;
-}
+    // Add gem image
+    const gemImg = Loader.getImage('gem');
+    const gemDiv = document.createElement('div');
+    gemDiv.className = 'selector-item';
+    gemDiv.style.backgroundImage = `url(${gemImg.src})`;
+    gemDiv.addEventListener('click', () => {
+        currentTileType = 'gem';
+    });
+    selectorContainer.appendChild(gemDiv);
 
-Gem.prototype.collect = function() {
-    this.collected = true;
-}
+    // Add switch images
+    const switchOffImg = Loader.getImage('switch_off');
+    const switchOffDiv = document.createElement('div');
+    switchOffDiv.className = 'selector-item';
+    switchOffDiv.style.backgroundImage = `url(${switchOffImg.src})`;
+    switchOffDiv.addEventListener('click', () => {
+        currentTileType = 'switch_off';
+    });
+    selectorContainer.appendChild(switchOffDiv);
 
-Gem.prototype.reset = function() {
-    this.collected = false;
-}
+    const switchOnImg = Loader.getImage('switch_on');
+    const switchOnDiv = document.createElement('div');
+    switchOnDiv.className = 'selector-item';
+    switchOnDiv.style.backgroundImage = `url(${switchOnImg.src})`;
+    switchOnDiv.addEventListener('click', () => {
+        currentTileType = 'switch_on';
+    });
+    selectorContainer.appendChild(switchOnDiv);
 
-function Switch(x, y, initialState)
-{
-    this.x = x;
-    this.y = y;
-    this.initialState = initialState;
-    this.state = this.initialState;
+    // Add hero start positions
+    const heroImages = ['hero_down', 'hero_up', 'hero_left', 'hero_right'];
+    heroImages.forEach((imgName, index) => {
+        const img = Loader.getImage(imgName);
+        const div = document.createElement('div');
+        div.className = 'selector-item';
+        div.style.backgroundImage = `url(${img.src})`;
+        div.addEventListener('click', () => {
+            currentTileType = `hero_${imgName.split('_')[1]}`;
+        });
+        selectorContainer.appendChild(div);
+    });
 
-    this.images = {}
-    this.images[SwitchState.On] = Loader.getImage('switch_on');
-    this.images[SwitchState.Off] = Loader.getImage('switch_off');
-}
-
-Switch.prototype.getImage = function() {
-    return this.images[this.state];
-}
-
-Switch.prototype.reset = function() {
-    this.state = this.initialState;
-}
-
-Switch.prototype.toggle = function() {
-    if(this.state == SwitchState.On)
-    {
-        this.state = SwitchState.Off;
-    }
-    else
-    {
-        this.state = SwitchState.On;
-    }
+    const trashImg = Loader.getImage('trash');
+    const trashDiv = document.createElement('div');
+    trashDiv.className = 'selector-item';
+    trashDiv.style.backgroundImage = `url(${trashImg.src})`;
+    trashDiv.addEventListener('click', () => {
+        currentTileType = 'trash';
+    });
+    selectorContainer.appendChild(trashDiv);
 }
 
 var map = {
     cols: 12,
     rows: 12,
     tsize: 64,
-    layers: [[
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    ], [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    ]],
+    layers: [
+        [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ],
+        [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ]
+    ],
 
     switches: [],
     gems: [],
-    startPosition: { x: 128, y: 128},
+    startPosition: { x: 128, y: 128 },
     startDirection: Direction.Down,
-    setTile: function (col, row, value) {
-        if(col >= 0 && col < this.cols && row >= 0 && row < this.rows)
+    removeObjectAt: function (x, y){
+        x *= this.tsize;
+        y *= this.tsize;
+
+        for(var i = 0; i < this.gems.length; i++)
         {
-            if(value == "gem")
+            var gem = this.gems[i];
+            if(gem.x == x && gem.y == y)
             {
-
+                this.gems.splice(i, 1);
+                break;
             }
-            else if(value == "switch")
-            {
+        }
 
-            }
-            else if(value == "spawn")
+        for(var i = 0; i < this.switches.length; i++)
+        {
+            var _switch = this.switches[i];
+            if(_switch.x == x && _switch.y == y)
             {
+                this.switches.splice(i, 1);
+                break;
+            }
+        }
+    },
+    setTile: function (col, row, value) {
+        if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
+            if(value == 'trash') {
+                this.removeObjectAt(col, row);
+                this.layers[0][(row) * map.cols + col] = 0;
+                this.layers[1][(row) * map.cols + col] = 0;
+            }
+            else if (value == 'gem') {
+                this.removeObjectAt(col, row);
+                this.gems.push({ x: col * this.tsize, y: row * this.tsize });
+            } else if (value == 'switch_off') {
+                this.removeObjectAt(col, row);
+                this.switches.push({ x: col * this.tsize, y: row * this.tsize, state: false });
+            } else if (value == 'switch_on') {
+                this.removeObjectAt(col, row);
+                this.switches.push({ x: col * this.tsize, y: row * this.tsize, state: true });
+            } else if ((typeof value === 'string' || value instanceof String) && value.includes('hero')) {
+                const dir = value.split('_')[1];
+                var direction = Direction.Down;
+                if(dir == "down")
+                    direction = Direction.Down;
+                else if(dir == "up")
+                    direction = Direction.Up;
+                else if(dir == "left")
+                    direction = Direction.Left;
+                else if(dir == "right")
+                    direction = Direction.Right;
 
-            }
-            else
-            {
-                this.layers[0][row * map.cols + col] = value;
-                // Automatically fill layer 1 with top of tree :
-                if(value == 3)
-                {
-                    if(row > 0)
-                        this.layers[1][(row - 1) * map.cols + col] = value;
+                this.startPosition = { x: col * this.tsize, y: row * this.tsize };
+                this.startDirection = direction;
+            } else {
+                this.layers[value != 4 && value != 5 ? 0 : 1][row * map.cols + col] = value;
+                if (value == 3 && row > 0) {
+                    this.layers[1][(row - 1) * map.cols + col] = 4;
                 }
             }
         }
@@ -124,8 +176,6 @@ var map = {
         var col = Math.floor(x / this.tsize);
         var row = Math.floor(y / this.tsize);
 
-        // tiles 3 and 5 are solid -- the rest are walkable
-        // loop through all layers and return TRUE if any tile is solid
         return this.layers.reduce(function (res, layer, index) {
             var tile = this.getTile(index, col, row);
             var isSolid = tile === 3 || tile === 5;
@@ -146,108 +196,62 @@ var map = {
     }
 };
 
-function Hero(map) {
-    this.startX = map.startPosition.x + map.tsize / 2;
-    this.startY = map.startPosition.y + map.tsize / 2;
-    this.startDirection = map.startDirection;
-    this.map = map;
-    this.x = this.startX;
-    this.y = this.startY;
-    this.width = map.tsize;
-    this.height = map.tsize;
-
-    this.images = {};
-    this.images[Direction.Down] = Loader.getImage('hero_down');
-    this.images[Direction.Up] = Loader.getImage('hero_up');
-    this.images[Direction.Left] = Loader.getImage('hero_left');
-    this.images[Direction.Right] = Loader.getImage('hero_right');
-
-    this.direction = this.startDirection;
-}
-
-Hero.prototype.getImage = function() {
-    return this.images[this.direction];
-}
-
-Hero.prototype.turnLeft = function()
-{
-    if(this.direction == Direction.Down)
-    {
-        this.direction = Direction.Right;
-    }
-    else if(this.direction == Direction.Right)
-    {
-        this.direction = Direction.Up;
-    }
-    else if(this.direction == Direction.Up)
-    {
-        this.direction = Direction.Left;
-    }
-    else if(this.direction == Direction.Left)
-    {
-        this.direction = Direction.Down;
-    }
-}
-
 Game.load = function () {
     return [
         Loader.loadImage('tiles', '../assets/tiles.png'),
-
         Loader.loadImage('hero_down', '../assets/down.png'),
         Loader.loadImage('hero_up', '../assets/up.png'),
         Loader.loadImage('hero_left', '../assets/left.png'),
         Loader.loadImage('hero_right', '../assets/right.png'),
-
         Loader.loadImage('gem', '../assets/gem.png'),
-
         Loader.loadImage('switch_off', '../assets/switch_off.png'),
-        Loader.loadImage('switch_on', '../assets/switch_on.png')
+        Loader.loadImage('switch_on', '../assets/switch_on.png'),
+
+        Loader.loadImage('ground', '../assets/ground.png'),
+        Loader.loadImage('tree_base', '../assets/tree_base.png'),
+        Loader.loadImage('tree_high', '../assets/tree_high.png'),
+        Loader.loadImage('bush', '../assets/bush.png'),
+
+        Loader.loadImage('trash', '../assets/trash.png')
     ];
 };
 
+Game.firstInit = true;
+
 Game.init = function () {
-    //Keyboard.listenForEvents(
-    //    [Keyboard.LEFT, Keyboard.RIGHT, Keyboard.UP, Keyboard.DOWN]);
     this.tileAtlas = Loader.getImage('tiles');
+    this.heroImg = [];
+    this.heroImg[Direction.Down] = Loader.getImage('hero_down');
+    this.heroImg[Direction.Up] = Loader.getImage('hero_up');
+    this.heroImg[Direction.Left] = Loader.getImage('hero_left');
+    this.heroImg[Direction.Right] = Loader.getImage('hero_right');
 
-    this.actionQueue = new Array();
-    this.hero = new Hero(map);
-    this.switches = [];
-    for(var i = 0; i < map.switches.length; i++)
+    if(this.firstInit)
     {
-        _switch = map.switches[i];
-        this.switches.push(new Switch(_switch.x, _switch.y, _switch.state ? SwitchState.On : SwitchState.Off));
-    }
-
-    this.gems = [];
-    for(var i = 0; i < map.gems.length; i++)
-    {
-        gem = map.gems[i];
-        this.gems.push(new Gem(gem.x, gem.y));
+        addSelectorItems();
+        this.firstInit = false;
     }
 };
 
-Game.update = function (delta) {
-    
-};
+Game.update = function (delta) {};
 
 Game._drawLayer = function (layer) {
     for (var c = 0; c < map.cols; c++) {
         for (var r = 0; r < map.rows; r++) {
             var tile = map.getTile(layer, c, r);
-            var x = c  * map.tsize;
-            var y = r  * map.tsize;
-            if (tile > 0) { // 0 => empty tile
+            var x = c * map.tsize;
+            var y = r * map.tsize;
+            if (tile > 0) {
                 this.ctx.drawImage(
-                    this.tileAtlas, // image
-                    (tile - 1) * map.tsize, // source x
-                    0, // source y
-                    map.tsize, // source width
-                    map.tsize, // source height
-                    Math.round(x),  // target x
-                    Math.round(y), // target y
-                    map.tsize, // target width
-                    map.tsize // target height
+                    this.tileAtlas,
+                    (tile - 1) * map.tsize,
+                    0,
+                    map.tsize,
+                    map.tsize,
+                    Math.round(x),
+                    Math.round(y),
+                    map.tsize,
+                    map.tsize
                 );
             }
         }
@@ -257,84 +261,41 @@ Game._drawLayer = function (layer) {
 Game._drawGrid = function () {
     var width = map.cols * map.tsize;
     var height = map.rows * map.tsize;
-    var x, y;
     for (var r = 0; r < map.rows; r++) {
-        x = 0;
-        y = r * map.tsize;
         this.ctx.beginPath();
-        this.ctx.moveTo(x, y);
-        this.ctx.lineTo(width, y);
+        this.ctx.moveTo(0, r * map.tsize);
+        this.ctx.lineTo(width, r * map.tsize);
         this.ctx.stroke();
     }
     for (var c = 0; c < map.cols; c++) {
-        x = c * map.tsize;
-        y = 0;
         this.ctx.beginPath();
-        this.ctx.moveTo(x, y);
-        this.ctx.lineTo(x, height);
+        this.ctx.moveTo(c * map.tsize, 0);
+        this.ctx.lineTo(c * map.tsize, height);
         this.ctx.stroke();
     }
 };
 
-Game._drawGemsAndSwitches = function()
-{
-    for(var i = 0; i < this.switches.length; i++)
-    {
-        var _switch = this.switches[i];
-        this.ctx.drawImage(_switch.getImage(), _switch.x, _switch.y);
-    }
-
-    for(var i = 0; i < this.gems.length; i++)
-    {
-        var gem = this.gems[i];
-        if(!gem.isCollected())
-        {
-            this.ctx.drawImage(gem.getImage(), gem.x, gem.y);
-        }
-    }
+Game._drawGemsAndSwitches = function () {
+    map.switches.forEach(_switch => {
+        this.ctx.drawImage(_switch.state ? Loader.getImage("switch_on") : Loader.getImage("switch_off"), _switch.x, _switch.y);
+    });
+    map.gems.forEach(gem => {
+        this.ctx.drawImage(Loader.getImage("gem"), gem.x, gem.y);
+    });
 }
 
 Game.render = function () {
-    // draw map background layer
     this._drawLayer(0);
-
-    // draw gems and switches 
     this._drawGemsAndSwitches();
-
-    // draw main character
     this.ctx.drawImage(
-        this.hero.getImage(),
-        this.hero.x - this.hero.width / 2,
-        this.hero.y - this.hero.height / 2);
-
-    
-    // draw map top layer
+        this.heroImg[map.startDirection],
+        map.startPosition.x,
+        map.startPosition.y
+    );
     this._drawLayer(1);
-
     this._drawGrid();
 };
 
-
-
-
-
-
-// Load level from API :
-/*
-async function loadLevel(levelId) {
-    try {
-        let response = await fetch(`http://127.0.0.1:3000/level/${levelId}`);
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        let data = await response.json();
-        initializeGame(data);
-    } catch (error) {
-        console.error('Error loading level:', error);
-        alert('Error loading level: ' + error.message);
-    }
-}
-*/
 function initializeGame(data) {
     map.cols = data.cols;
     map.rows = data.rows;
@@ -344,9 +305,6 @@ function initializeGame(data) {
     map.gems = data.gems;
     map.startPosition = data.startPosition;
     map.startDirection = data.startDirection;
-
-    // Afficher les consignes
-    //document.getElementById('instructions').innerHTML = data.instructions;
 
     Game.init();
 }

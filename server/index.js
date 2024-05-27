@@ -55,7 +55,6 @@ app.post('/checkanswer', async (req, res) => {
 });
 
 app.post('/savelevel/:uid', async (req, res) => {
-    console.log("/savelevel/:uid");
     const levelData = req.body;
     var levelId = req.params.uid;
     try
@@ -68,9 +67,7 @@ app.post('/savelevel/:uid', async (req, res) => {
 });
 
 app.post('/savelevel', async (req, res) => {
-    console.log("/savelevel");
     const levelData = req.body;
-    console.log(levelData);
     try
     {
         let levelId = await saveLevel(levelData, -1);
@@ -93,49 +90,6 @@ async function loadLevel(levelId)
 async function saveLevel(data, lvlId)
 {
     var levelId = lvlId;
-    /*
-    var data =  {
-        cols: 12,
-        rows: 12,
-        tsize: 64,
-        layers: [[
-            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-            3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
-            3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
-            3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
-            3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
-            3, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 3,
-            3, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 3,
-            3, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 3,
-            3, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 3,
-            3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 3,
-            3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 3,
-            3, 3, 3, 1, 1, 2, 3, 3, 3, 3, 3, 3
-        ], [
-            4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4,
-            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-            4, 0, 0, 5, 0, 0, 0, 0, 0, 5, 0, 4,
-            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
-            4, 4, 4, 0, 5, 4, 4, 4, 4, 4, 4, 4,
-            4, 4, 4, 0, 0, 3, 3, 3, 3, 3, 3, 3
-        ]],
-    
-        switches: [ { x: 128, y: 192, state: false }, { x: 256, y: 192, state: true} ],
-        gems: [ { x: 128, y: 64 }],
-        startPosition: { x: 128, y: 128 },
-        startDirection: Direction.Down,
-        instructions: "Votre robot doit allumer tous les interrupteurs et collecter l'ensemble des gemmes pour réussir ce niveau.<br/>Pour contrôler le robot, vous disposez des instructions suivantes :<br/>- moveForward() : Permet de faire avancer le robot dans la direction dans laquelle il regarde.<br/>- turnLeft() : Permet de faire tourner le robot d'un quart de tour sur lui même dans le sens inverse des aiguilles d'une montre.<br/>- toggleSwitch() : Permet d'inverser l'état d'un interrupteur. <br/>- collectGem() : Permet de récupérer une gemme.<br/><br/>Pour intéragir avec un interrupteur ou une gemme, le robot doit se trouver sur la case de l'élément interactif."
-    };
-
-    await client.set("level:1", JSON.stringify(data));
-    */
-
     var updateLvlId = false;
     if(levelId == -1)
     {
@@ -143,9 +97,7 @@ async function saveLevel(data, lvlId)
         levelId++;
         updateLvlId = true;
     }
- 
-    console.log(data);
-    console.log(levelId);
+
     await client.set(`level:${levelId}`, JSON.stringify(data));
     if(updateLvlId)
         await client.set('levelid', levelId);
@@ -242,7 +194,6 @@ async function checkAnswer(levelId, code)
                 context.character.y = 0;
                 context.success = false;
             }
-            //console.log("New character X = " + context.character.x);
         },
         turnLeft: () => {
             var direction = context.characterDirection;
