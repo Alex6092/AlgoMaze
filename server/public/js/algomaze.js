@@ -554,25 +554,6 @@ function solve(code)
     eval(code);
 }
 
-// Load level from API :
-async function loadLevel(levelId, token) {
-    try {
-        let response = await fetch(`http://127.0.0.1:3000/level/${levelId}`, {
-            headers: {
-                'Authorization': 'Bearer ' + token
-            }
-        });
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        let data = await response.json();
-        initializeGame(data);
-    } catch (error) {
-        console.error('Error loading level:', error);
-        alert('Error loading level: ' + error.message);
-    }
-}
-
 function initializeGame(data) {
     map.cols = data.cols;
     map.rows = data.rows;

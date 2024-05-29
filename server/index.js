@@ -6,28 +6,44 @@ import cookieParser from 'cookie-parser';
 import { Direction, SwitchState } from './shared.js';
 import userRouter from './routes/user.js';
 import redisClient from './redisClient.js';
+import { __dirname } from './utils.js';
 import { generateToken, verifyToken, userFromToken } from './jwtConfig.js';
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+    origin: 'http://localhost:3000', // Remplacez par votre domaine
+    credentials: true
+}));
 app.use(cookieParser());
-//app.use(express.static('public'))
+app.use(express.static('public'))
 app.use('/user', userRouter);
 
 // Middleware pour vérifier l'authentification
 app.use((req, res, next) => {
     const token = req.cookies.token;
+    const publicPaths = ['/login', '/user/login', '/', '/user/register']; // Ajoutez ici les routes publiques
+
+    //console.log(`Requested path: ${req.path}`); // Log du chemin demandé
+    //console.log(`Token: ${token}`); // Log du token
+
+    if (publicPaths.includes(req.path)) {
+        return next();
+    }
+
     if (token) {
         try {
             const decoded = verifyToken(token);
             req.user = decoded;
-            next();
+            //console.log('Token valid, user authenticated');
+            return next();
         } catch (err) {
+            //console.log('Invalid token');
             res.clearCookie('token');
-            res.redirect('/login');
+            return res.redirect('/login');
         }
     } else {
-        res.redirect('/login');
+        //console.log('No token provided');
+        return res.redirect('/login');
     }
 });
 
@@ -48,8 +64,26 @@ app.get('/maze', (req, res) => {
     res.sendFile(__dirname + '/algomaze.html');
 });
 
-app.get('/editor', (req, res) => {
-    res.sendFile(__dirname + '/level-editor.html');
+app.get('/editor', async (req, res) => {
+    const token = req.cookies.token;
+    if (token) {
+        try {
+            const decoded = verifyToken(token);
+            req.user = decoded;
+
+            var user = JSON.parse(await redisClient.get('user:' + decoded.userId));
+            if(user.isAdmin)
+                res.sendFile(__dirname + '/level-editor.html');
+            else
+                res.redirect('/maze');
+        }
+        catch(error)
+        {
+            res.status(500).send({error: "Unexpected error"});
+        }
+    }
+    else
+        res.status(403).send({error: "Not authenticated"});
 });
 
 // API :
@@ -72,10 +106,13 @@ app.get('/levels', async (req, res) => {
             }
         }
 
+        sentence.sort();
+
         res.send(JSON.stringify(sentence));
     }
     catch(error)
     {
+        console.log("[ERROR] /levels/ " + error);
         res.status(500).send({ error : error});
     }
 });
@@ -98,6 +135,7 @@ app.get('/level/:uid', async (req, res) => {
     }
     catch(error)
     {
+        console.log("[ERROR] /level/:uid " + error);
         res.send({error: error});
     }
 });
@@ -124,6 +162,7 @@ app.get('/level/:uid/usersolution', async (req, res) => {
     }
     catch(error)
     {
+        console.log("[ERROR] /level/:uid/usersolution " + error);
         res.status(500).send({error: error});
     }
 });
@@ -146,9 +185,9 @@ app.post('/checkanswer', async (req, res) => {
                 if(levelId > user.lastCompletedLevel)
                 {
                     user.lastCompletedLevel = levelId;
-                    await redisClient.set('user:' + uid, JSON.stringify(user));
+                    await redisClient.set('user:' + user.username, JSON.stringify(user));
                 }
-                await redisClient.set('usersolution:'+ uid + ':level:' + levelId, code);
+                await redisClient.set('usersolution:'+ user.username + ':level:' + levelId, code);
             }
 
             res.send(result);
@@ -158,6 +197,7 @@ app.post('/checkanswer', async (req, res) => {
             res.status(403).send({ error: 'You have not reached this level'});
         }
     } catch (error) {
+        console.log("[ERROR] /checkanswer " + error);
         res.status(500).send({ error: 'Error checking answer ...' });
     }
 });
@@ -181,6 +221,7 @@ app.post('/savelevel/:uid', async (req, res) => {
             res.status(403).send({ error: 'You are not an administrator'});
         }
     } catch (error) {
+        console.log("[ERROR] /savelevel/:uid " + error);
         res.status(500).send({ error: 'Failed to save level' });
     }
 });
@@ -203,6 +244,7 @@ app.post('/savelevel', async (req, res) => {
             res.status(403).send({ error: 'You are not an administrator'});
         }
     } catch (error) {
+        console.log("[ERROR] /savelevel " + error);
         res.status(500).send({ error: 'Failed to save level' });
     }
 });

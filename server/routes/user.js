@@ -27,6 +27,7 @@ router.post('/register', async (req, res) => {
             res.status(500).send({ error: 'Error creating user' });
         }
     } catch (error) {
+        console.log("[ERROR] /user/register " + error);
         res.status(500).send({ error: 'Error creating user' });
     }
 });
@@ -39,12 +40,15 @@ router.post('/login', async (req, res) => {
         var exists = await redisClient.exists('user:' + username);
         if(exists)
         {
-           
             const user = JSON.parse(await redisClient.get('user:' + username));
             const isMatch = await bcrypt.compare(password, user.password);
             if (!isMatch) return res.status(401).send({ error: 'Invalid credentials' });
 
             const token = generateToken(username);
+            res.cookie('token', token, {
+                httpOnly: false,
+                secure: false
+            });
             res.send({ token });
         }
         else
@@ -54,17 +58,24 @@ router.post('/login', async (req, res) => {
     } 
     catch (error) 
     {
+        console.log("[ERROR] /user/login " + error);
         res.status(500).send({ error: 'Error logging in' + error });
     }
+});
+
+router.post('/logout', (req, res) => {
+    res.clearCookie('token');
+    res.json({message: 'Logged out successfully'});
 });
 
 // Get user progress
 router.get('/progress', async (req, res) => {
     try {
         const token = req.headers.authorization.split(" ")[1];
-        const user = userFromToken(token);
+        const user = await userFromToken(token);
         res.send({progress: user.lastCompletedLevel});
     } catch (error) {
+        console.log("[ERROR] /user/progress " + error);
         res.status(500).send({ error: 'Error retrieving progress' });
     }
 });

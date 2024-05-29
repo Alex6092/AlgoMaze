@@ -24,16 +24,16 @@
             e.preventDefault();
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
-            const response = await fetch('http://localhost:3000/user/login', {
+            const response = await fetch('/user/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify({ username, password }),
+                credentials: 'include'
             });
             const data = await response.json();
             if (data.token) {
                 localStorage.setItem('token', data.token);
-                alert('Login successful');
-                // Redirect to level editor or game page
+                window.location.href = '/maze';
             } else {
                 alert(data.error);
             }
@@ -43,10 +43,11 @@
             e.preventDefault();
             const username = document.getElementById('reg-username').value;
             const password = document.getElementById('reg-password').value;
-            const response = await fetch('http://localhost:3000/user/register', {
+            const response = await fetch('/user/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify({ username, password }),
+                credentials: 'include'
             });
             const data = await response.json();
             if (data.message) {

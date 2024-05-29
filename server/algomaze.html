@@ -3,14 +3,14 @@
     <head>
         <title>Algomaze</title>
         <meta charset="utf-8">
-        <link rel="stylesheet" href="styles.css" type="text/css">
+        <link rel="stylesheet" href="/css/styles.css" type="text/css">
 
         <!-- CodeMirror CSS -->
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
 
-        <script src="shared.js"></script>
-        <script src="common.js"></script>
-        <script src="algomaze.js"></script>
+        <script src="/js/shared.js"></script>
+        <script src="/js/common.js"></script>
+        <script src="/js/algomaze.js"></script>
         <!-- CodeMirror JS -->
         <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
@@ -27,6 +27,11 @@
         </header>
 
         <div class="main-wrapper">
+            <div class="menu-container">
+                <h2>Niveaux</h2>
+                <ul class="level-list" id="level-list"></ul>
+            </div>
+
             <div class="left-container">
                 <canvas id="maze" width="768" height="768"></canvas>
             </div>
@@ -47,7 +52,7 @@
 
        
         <script>
-            document.addEventListener("DOMContentLoaded", function() {
+            document.addEventListener("DOMContentLoaded", async function() {
                 const token = localStorage.getItem('token');
                 var editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
                     lineNumbers: true,
@@ -71,13 +76,14 @@
                     var levelId = "1"; // replace with the actual level ID
 
                     try {
-                        let response = await fetch('http://127.0.0.1:3000/checkanswer', {
+                        let response = await fetch('/checkanswer', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'Authorization': 'Bearer ' + token
                             },
-                            body: JSON.stringify({ levelId, code })
+                            body: JSON.stringify({ levelId, code }),
+                            credentials: 'include'
                         });
 
                         let result = await response.json();
@@ -88,7 +94,105 @@
                     }
                 });
 
-                loadLevel(1, token);
+                var levelsIds = [];
+                async function fetchLevels() {
+                    try {
+                        let response = await fetch('/levels', {
+                            headers: {
+                                'Authorization': 'Bearer ' + token
+                            },
+                            credentials: 'include'
+                        });
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        levelsIds = await response.json();
+                        displayLevels(levelsIds);
+                    } catch (error) {
+                        console.error('Error fetching levels:', error);
+                        alert('Error fetching levels: ' + error.message);
+                    }
+                }
+
+                function displayLevels(levels) {
+                    const levelList = document.getElementById('level-list');
+                    levelList.innerHTML = '';
+                    levels.forEach(levelId => {
+                        const li = document.createElement('li');
+                        li.textContent = `Level ${levelId}`;
+                        li.addEventListener('click', () => loadLevel(levelId, token));
+                        levelList.appendChild(li);
+                    });
+                }
+
+                async function fetchPlayerProgress()
+                {
+                    try {
+                        let response = await fetch('/user/progress', {
+                            headers: {
+                                'Authorization': 'Bearer ' + token
+                            },
+                            credentials: 'include'
+                        });
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        let progress = await response.json();
+                        if(levelsIds[levelsIds.length - 1] >= progress.progress + 1)
+                            await loadLevel(progress.progress + 1, token);
+                        else
+                            await loadLevel(levelsIds[levelsIds.length - 1], token);
+                    } catch (error) {
+                        console.error('Error fetching levels:', error);
+                        alert('Error fetching levels: ' + error.message);
+                    }
+
+                    //loadLevel(1, token);
+                }
+
+                async function loadPlayerSentence(levelId, token)
+                {
+                    try {
+                        let response = await fetch(`/level/${levelId}/usersolution`, {
+                            headers: {
+                                'Authorization': 'Bearer ' + token
+                            },
+                            credentials: 'include'
+                        });
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        let data = await response.text();
+                        editor.setValue(data);
+                    } catch (error) {
+                        console.error('Error loading level:', error);
+                        alert('Error loading level: ' + error.message);
+                    }
+                }
+
+                // Load level from API :
+                async function loadLevel(levelId, token) {
+                    try {
+                        let response = await fetch(`/level/${levelId}`, {
+                            headers: {
+                                'Authorization': 'Bearer ' + token
+                            },
+                            credentials: 'include'
+                        });
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        let data = await response.json();
+                        await loadPlayerSentence(levelId, token);
+                        initializeGame(data);
+                    } catch (error) {
+                        console.error('Error loading level:', error);
+                        alert('Error loading level: ' + error.message);
+                    }
+                }
+
+                await fetchLevels();
+                await fetchPlayerProgress();
             });
         </script>
 

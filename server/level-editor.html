@@ -3,10 +3,10 @@
 <head>
     <title>Level Editor</title>
     <meta charset="utf-8">
-    <link rel="stylesheet" href="styles.css" type="text/css">
-    <script src="shared.js"></script>
-    <script src="common.js"></script>
-    <script src="level-editor.js"></script>
+    <link rel="stylesheet" href="/css/styles.css" type="text/css">
+    <script src="/js/shared.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/level-editor.js"></script>
 
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <style>
@@ -162,7 +162,7 @@
         };
 
         try {
-            let fetchAddress = 'http://127.0.0.1:3000/savelevel';
+            let fetchAddress = '/savelevel';
             if(currentLevelId >= 0)
             {
                 fetchAddress += '/' + currentLevelId;
@@ -174,7 +174,8 @@
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + token
                 },
-                body: JSON.stringify(levelData)
+                body: JSON.stringify(levelData),
+                credentials: 'include'
             });
             let result = await response.json();
             alert("Level saved: " + result.levelId);
@@ -226,10 +227,11 @@
 
     async function loadLevel(levelId) {
         try {
-            let response = await fetch(`http://127.0.0.1:3000/level/${levelId}`, {
+            let response = await fetch(`/level/${levelId}`, {
                 headers: {
                     'Authorization': 'Bearer ' + token
-                }
+                },
+                credentials: 'include'
             });
             if (!response.ok) {
                 throw new Error('Network response was not ok');
@@ -250,10 +252,11 @@
 
     async function fetchLevels() {
         try {
-            let response = await fetch('http://127.0.0.1:3000/levels', {
+            let response = await fetch('/levels', {
                 headers: {
                     'Authorization': 'Bearer ' + token
-                }
+                },
+                credentials: 'include'
             });
             if (!response.ok) {
                 throw new Error('Network response was not ok');
