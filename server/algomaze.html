@@ -88,6 +88,11 @@
 
                         let result = await response.json();
                         alert("Server response: " + result);
+                        if(result == true)
+                        {
+                            await fetchLevels();
+                            await fetchPlayerProgress();
+                        }
                     } catch (error) {
                         console.error('Error:', error);
                         alert('Error submitting code: ' + error.message);
