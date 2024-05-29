@@ -2,75 +2,206 @@ import { createClient } from 'redis';
 import vm from 'node:vm';
 import express from 'express';
 import cors from 'cors';
-import { Direction, SwitchState } from '../shared.js';
+import cookieParser from 'cookie-parser';
+import { Direction, SwitchState } from './shared.js';
 import userRouter from './routes/user.js';
 import redisClient from './redisClient.js';
+import { generateToken, verifyToken, userFromToken } from './jwtConfig.js';
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(cookieParser());
+//app.use(express.static('public'))
 app.use('/user', userRouter);
+
+// Middleware pour vérifier l'authentification
+app.use((req, res, next) => {
+    const token = req.cookies.token;
+    if (token) {
+        try {
+            const decoded = verifyToken(token);
+            req.user = decoded;
+            next();
+        } catch (err) {
+            res.clearCookie('token');
+            res.redirect('/login');
+        }
+    } else {
+        res.redirect('/login');
+    }
+});
+
 const port = 3000;
+
+// Routes publiques
+app.get('/login', (req, res) => {
+    res.sendFile(__dirname + '/login.html');
+});
+
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/login.html');
+});
+
+// Routes protégées :
+
+app.get('/maze', (req, res) => {
+    res.sendFile(__dirname + '/algomaze.html');
+});
+
+app.get('/editor', (req, res) => {
+    res.sendFile(__dirname + '/level-editor.html');
+});
 
 // API :
 app.get('/levels', async (req, res) => {
-    // Request levels list from redis :
-    var result = await redisClient.keys("level:*");
-
-    var sentence = [];
-    for(var level of result)
-    {   
-        sentence.push(level.substring(6));
-    }
-
-    res.send(JSON.stringify(sentence));
-});
-
-app.get('/level/:uid', async (req, res) => {
-    var levelId = req.params.uid;
-    var result = await loadLevel(levelId);
-    res.send(result);
-});
-
-app.post('/checkanswer', async (req, res) => {
-    const { levelId, code } = req.body;
-
     try
     {
-        const result = await checkAnswer(levelId, code);
+        const token = req.headers.authorization.split(" ")[1];
+        var user = await userFromToken(token);
 
-        // L'utilisateur a réussi le niveau :
-        // On met à jour son progrès et on enregistre sa réponse.
-        if(result)
-        {
-            // TODO ...
+        // Request levels list from redis :
+        var result = await redisClient.keys("level:*");
+
+        var sentence = [];
+        for(var level of result)
+        {   
+            var levelAsInt = parseInt(level.substring(6));
+            if(user.lastCompletedLevel >= levelAsInt - 1 || user.isAdmin)
+            {    
+                sentence.push(levelAsInt);
+            }
         }
 
-        res.send(result);
+        res.send(JSON.stringify(sentence));
     }
     catch(error)
     {
-        res.status(500).send({ error: error.message });
+        res.status(500).send({ error : error});
+    }
+});
+
+app.get('/level/:uid', async (req, res) => {
+    try
+    {
+        var levelId = req.params.uid;
+        const token = req.headers.authorization.split(" ")[1];
+        var user = await userFromToken(token);
+        if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
+        {   
+            var result = await loadLevel(levelId);
+            res.send(result);
+        }
+        else
+        {
+            res.status(403).send({ error: 'You have not reached this level'});
+        }
+    }
+    catch(error)
+    {
+        res.send({error: error});
+    }
+});
+
+app.get('/level/:uid/usersolution', async (req, res) => {
+    try {
+        var levelId = req.params.uid;
+        const token = req.headers.authorization.split(" ")[1];
+        var user = await userFromToken(token);
+
+        if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
+        {
+            var solution = "// Votre solution ici ...";
+            var stored = await redisClient.get('usersolution:'+ user.username + ':level:' + levelId);
+            if(stored != null && stored.length > 0)
+                solution = stored;
+
+            res.send(solution);
+        }
+        else
+        {
+            res.status(403).send({ error: 'You have not reached this level'});
+        }
+    }
+    catch(error)
+    {
+        res.status(500).send({error: error});
+    }
+});
+
+app.post('/checkanswer', async (req, res) => {
+    
+    try {
+        const { levelId, code } = req.body;
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+
+        if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
+        {
+            const result = await checkAnswer(levelId, code);
+
+            // L'utilisateur a réussi le niveau :
+            // On met à jour son progrès et on enregistre sa réponse.
+            if(result)
+            {
+                if(levelId > user.lastCompletedLevel)
+                {
+                    user.lastCompletedLevel = levelId;
+                    await redisClient.set('user:' + uid, JSON.stringify(user));
+                }
+                await redisClient.set('usersolution:'+ uid + ':level:' + levelId, code);
+            }
+
+            res.send(result);
+        }
+        else
+        {
+            res.status(403).send({ error: 'You have not reached this level'});
+        }
+    } catch (error) {
+        res.status(500).send({ error: 'Error checking answer ...' });
     }
 });
 
 app.post('/savelevel/:uid', async (req, res) => {
-    const levelData = req.body;
-    var levelId = req.params.uid;
     try
     {
-        levelId = await saveLevel(levelData, levelId);
-        res.send({ levelId: levelId, status: 'Level saved successfully' });
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+
+        if(user.isAdmin)
+        {
+            const levelData = req.body;
+            var levelId = req.params.uid;
+
+            levelId = await saveLevel(levelData, levelId);
+            res.send({ levelId: levelId, status: 'Level saved successfully' });
+        }
+        else
+        {
+            res.status(403).send({ error: 'You are not an administrator'});
+        }
     } catch (error) {
         res.status(500).send({ error: 'Failed to save level' });
     }
 });
 
 app.post('/savelevel', async (req, res) => {
-    const levelData = req.body;
+    
     try
     {
-        let levelId = await saveLevel(levelData, -1);
-        res.send({ levelId: levelId, status: 'Level saved successfully' });
+        const levelData = req.body;
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+
+        if(user.isAdmin)
+        {
+            let levelId = await saveLevel(levelData, -1);
+            res.send({ levelId: levelId, status: 'Level saved successfully' });
+        }
+        else
+        {
+            res.status(403).send({ error: 'You are not an administrator'});
+        }
     } catch (error) {
         res.status(500).send({ error: 'Failed to save level' });
     }

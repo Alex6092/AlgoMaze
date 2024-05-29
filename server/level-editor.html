@@ -1,0 +1,285 @@
+<!doctype html>
+<html>
+<head>
+    <title>Level Editor</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="styles.css" type="text/css">
+    <script src="shared.js"></script>
+    <script src="common.js"></script>
+    <script src="level-editor.js"></script>
+
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <style>
+        .main-wrapper {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+        }
+        .menu-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-right: 1px solid #ccc;
+            padding: 10px;
+        }
+        .canvas-container {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .editor-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            margin-left: 20px;
+        }
+        #editor-container {
+            height: 200px;
+        }
+        .level-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+            width: 100%;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .level-list li {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #ccc;
+        }
+        .level-list li:hover {
+            background-color: #f0f0f0;
+        }
+        .selector-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .selector-item {
+            width: 64px;
+            height: 64px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<header class="main-header">
+    <h1>Level Editor</h1>
+</header>
+
+<div class="main-wrapper">
+    <div class="menu-container">
+        <h2>Levels</h2>
+        <ul class="level-list" id="level-list"></ul>
+        <button id="new-level-button">Create New Level</button>
+    </div>
+
+    <div class="canvas-container">
+        <h2>Map Editor</h2>
+        <canvas id="maze" width="768" height="768" style="border:1px solid #000;"></canvas>
+        <div>
+            <button id="save-button">Save Level</button>
+        </div>
+    </div>
+
+    <div class="editor-container">
+        <h2>Instructions Editor</h2>
+        <div id="editor-container"></div>
+        <h2>Element Selector</h2>
+        <div class="selector-container" id="selector-container">
+            <!-- Tiles, gems, switches, and start positions will be added here -->
+        </div>
+    </div>
+</div><!-- main wrapper -->
+
+<!-- Include Quill library -->
+<script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+<script>
+    //map = Array.from({ length: mapRows }, () => Array(mapCols).fill(1)); // Default to tile type 1
+    let currentLevelId = -1;
+    var currentTileType = 1;
+    const token = localStorage.getItem('token');
+
+    // Initialize Quill editor
+    const quill = new Quill('#editor-container', {
+        theme: 'snow'
+    });
+
+    const canvas = document.getElementById('maze');
+
+    var startcol;
+    var startrow;
+    canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        startcol = Math.floor(x / map.tsize);
+        startrow = Math.floor(y / map.tsize);
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const col = Math.floor(x / map.tsize);
+        const row = Math.floor(y / map.tsize);
+
+        const startX = Math.min(startcol, col);
+        const startY = Math.min(startrow, row);
+        const endX = Math.max(startcol, col);
+        const endY = Math.max(startrow, row);
+
+        for(var i = startX; i <= endX; i++)
+        {
+            for(var j = startY; j <= endY; j++)
+            {
+                map.setTile(i, j, currentTileType);
+            }
+        }
+        
+    });
+
+    document.getElementById('save-button').addEventListener('click', async () => {
+        const instructions = quill.root.innerHTML;
+
+        var levelData =  {
+            cols: map.cols,
+            rows: map.rows,
+            tsize: map.tsize,
+            layers: map.layers,
+        
+            switches: map.switches,
+            gems: map.gems,
+            startPosition: map.startPosition,
+            startDirection: map.startDirection,
+            instructions: instructions
+        };
+
+        try {
+            let fetchAddress = 'http://127.0.0.1:3000/savelevel';
+            if(currentLevelId >= 0)
+            {
+                fetchAddress += '/' + currentLevelId;
+            }
+
+            let response = await fetch(fetchAddress, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(levelData)
+            });
+            let result = await response.json();
+            alert("Level saved: " + result.levelId);
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error saving level: ' + error.message);
+        }
+
+        fetchLevels();
+    });
+
+    document.getElementById('new-level-button').addEventListener('click', () => {
+        //map = Array.from({ length: mapRows }, () => Array(mapCols).fill(1)); // Reset map to default tile type 1
+        map.layers[0] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ];
+        map.layers[1] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ];
+        map.gems = [];
+        map.switches = [];
+        map.startDirection = "Down";
+        map.startPosition = { x: 128, y: 128 };
+        quill.root.innerHTML = ''; // Clear instructions
+        currentLevelId = -1;
+    });
+
+    async function loadLevel(levelId) {
+        try {
+            let response = await fetch(`http://127.0.0.1:3000/level/${levelId}`, {
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                }
+            });
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            let data = await response.json();
+            loadLevelData(data);
+            currentLevelId = levelId;
+        } catch (error) {
+            console.error('Error loading level:', error);
+            alert('Error loading level: ' + error.message);
+        }
+    }
+
+    function loadLevelData(data) {
+        initializeGame(data);
+        quill.root.innerHTML = data.instructions;
+    }
+
+    async function fetchLevels() {
+        try {
+            let response = await fetch('http://127.0.0.1:3000/levels', {
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                }
+            });
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            let levels = await response.json();
+            displayLevels(levels);
+        } catch (error) {
+            console.error('Error fetching levels:', error);
+            alert('Error fetching levels: ' + error.message);
+        }
+    }
+
+    function displayLevels(levels) {
+        const levelList = document.getElementById('level-list');
+        levelList.innerHTML = '';
+        levels.forEach(levelId => {
+            const li = document.createElement('li');
+            li.textContent = `Level ${levelId}`;
+            li.addEventListener('click', () => loadLevel(levelId));
+            levelList.appendChild(li);
+        });
+    }
+
+    fetchLevels(); // Load the list of levels when the page loads
+
+</script>
+
+</body>
+</html>
