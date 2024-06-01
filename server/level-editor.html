@@ -156,6 +156,10 @@
         
             switches: map.switches,
             gems: map.gems,
+            teleport1: map.teleport1,
+            teleport2: map.teleport2,
+            teleport3: map.teleport3,
+            teleport4: map.teleport4,
             startPosition: map.startPosition,
             startDirection: map.startDirection,
             instructions: instructions
@@ -219,6 +223,10 @@
         ];
         map.gems = [];
         map.switches = [];
+        map.teleport1 = [];
+        map.teleport2 = [];
+        map.teleport3 = [];
+        map.teleport4 = [];
         map.startDirection = "Down";
         map.startPosition = { x: 128, y: 128 };
         quill.root.innerHTML = ''; // Clear instructions

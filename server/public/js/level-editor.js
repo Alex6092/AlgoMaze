@@ -3,69 +3,57 @@
 function addSelectorItems() {
     const selectorContainer = document.getElementById('selector-container');
 
-    // Add tile images
-    const tileImages = ['tiles', 'ground', 'tree_base', 'tree_high', 'bush'];
-    tileImages.forEach((imgName, index) => {
+    function addToSelectorContainer(imgName, clickCallback)
+    {
         const img = Loader.getImage(imgName);
         const div = document.createElement('div');
         div.className = 'selector-item';
         div.style.backgroundImage = `url(${img.src})`;
-        div.addEventListener('click', () => {
+        div.addEventListener('click', clickCallback);
+        selectorContainer.appendChild(div);
+    }
+
+    // Add tile images
+    const tileImages = ['tiles', 'ground', 'tree_base', 'tree_high', 'bush'];
+    tileImages.forEach((imgName, index) => {
+        addToSelectorContainer(imgName, () => {
             currentTileType = index + 1;
         });
-        selectorContainer.appendChild(div);
     });
 
     // Add gem image
-    const gemImg = Loader.getImage('gem');
-    const gemDiv = document.createElement('div');
-    gemDiv.className = 'selector-item';
-    gemDiv.style.backgroundImage = `url(${gemImg.src})`;
-    gemDiv.addEventListener('click', () => {
+    addToSelectorContainer('gem', () => {
         currentTileType = 'gem';
     });
-    selectorContainer.appendChild(gemDiv);
 
     // Add switch images
-    const switchOffImg = Loader.getImage('switch_off');
-    const switchOffDiv = document.createElement('div');
-    switchOffDiv.className = 'selector-item';
-    switchOffDiv.style.backgroundImage = `url(${switchOffImg.src})`;
-    switchOffDiv.addEventListener('click', () => {
+    addToSelectorContainer('switch_off', () => {
         currentTileType = 'switch_off';
     });
-    selectorContainer.appendChild(switchOffDiv);
 
-    const switchOnImg = Loader.getImage('switch_on');
-    const switchOnDiv = document.createElement('div');
-    switchOnDiv.className = 'selector-item';
-    switchOnDiv.style.backgroundImage = `url(${switchOnImg.src})`;
-    switchOnDiv.addEventListener('click', () => {
+    addToSelectorContainer('switch_on', () => {
         currentTileType = 'switch_on';
     });
-    selectorContainer.appendChild(switchOnDiv);
+
+    // Add teleporter images 
+    const teleporterImages = ['teleport_1', 'teleport_2', 'teleport_3', 'teleport_4'];
+    teleporterImages.forEach((imgName, index) => {
+        addToSelectorContainer(imgName, () => {
+            currentTileType = `teleport_${imgName.split('_')[1]}`;
+        });
+    });
 
     // Add hero start positions
     const heroImages = ['hero_down', 'hero_up', 'hero_left', 'hero_right'];
     heroImages.forEach((imgName, index) => {
-        const img = Loader.getImage(imgName);
-        const div = document.createElement('div');
-        div.className = 'selector-item';
-        div.style.backgroundImage = `url(${img.src})`;
-        div.addEventListener('click', () => {
+        addToSelectorContainer(imgName, () => {
             currentTileType = `hero_${imgName.split('_')[1]}`;
         });
-        selectorContainer.appendChild(div);
     });
 
-    const trashImg = Loader.getImage('trash');
-    const trashDiv = document.createElement('div');
-    trashDiv.className = 'selector-item';
-    trashDiv.style.backgroundImage = `url(${trashImg.src})`;
-    trashDiv.addEventListener('click', () => {
+    addToSelectorContainer('trash', () => {
         currentTileType = 'trash';
     });
-    selectorContainer.appendChild(trashDiv);
 }
 
 var map = {
@@ -105,6 +93,10 @@ var map = {
 
     switches: [],
     gems: [],
+    teleport1: [],
+    teleport2: [],
+    teleport3: [],
+    teleport4: [],
     startPosition: { x: 128, y: 128 },
     startDirection: Direction.Down,
     removeObjectAt: function (x, y){
@@ -130,6 +122,46 @@ var map = {
                 break;
             }
         }
+
+        for(var i = 0; i < this.teleport1.length; i++)
+        {
+            var teleport = this.teleport1[i];
+            if(teleport.x == x && teleport.y == y)
+            {
+                this.teleport1.splice(i, 1);
+                break;
+            }
+        }
+
+        for(var i = 0; i < this.teleport2.length; i++)
+        {
+            var teleport = this.teleport2[i];
+            if(teleport.x == x && teleport.y == y)
+            {
+                this.teleport2.splice(i, 1);
+                break;
+            }
+        }
+
+        for(var i = 0; i < this.teleport3.length; i++)
+        {
+            var teleport = this.teleport3[i];
+            if(teleport.x == x && teleport.y == y)
+            {
+                this.teleport3.splice(i, 1);
+                break;
+            }
+        }
+
+        for(var i = 0; i < this.teleport4.length; i++)
+        {
+            var teleport = this.teleport4[i];
+            if(teleport.x == x && teleport.y == y)
+            {
+                this.teleport4.splice(i, 1);
+                break;
+            }
+        }
     },
     setTile: function (col, row, value) {
         if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
@@ -147,7 +179,48 @@ var map = {
             } else if (value == 'switch_on') {
                 this.removeObjectAt(col, row);
                 this.switches.push({ x: col * this.tsize, y: row * this.tsize, state: true });
-            } else if ((typeof value === 'string' || value instanceof String) && value.includes('hero')) {
+            } 
+            else if (value == 'teleport_1')
+            {
+                this.removeObjectAt(col, row);
+                this.teleport1.push({ x: col * this.tsize, y: row * this.tsize });
+
+                if(this.teleport1.length > 2)
+                {
+                    this.teleport1.shift();
+                }
+            }
+            else if (value == 'teleport_2')
+            {
+                this.removeObjectAt(col, row);
+                this.teleport2.push({ x: col * this.tsize, y: row * this.tsize });
+
+                if(this.teleport2.length > 2)
+                {
+                    this.teleport2.shift();
+                }
+            }
+            else if (value == 'teleport_3')
+            {
+                this.removeObjectAt(col, row);
+                this.teleport3.push({ x: col * this.tsize, y: row * this.tsize });
+
+                if(this.teleport3.length > 2)
+                {
+                    this.teleport3.shift();
+                }
+            }
+            else if (value == 'teleport_4')
+            {
+                this.removeObjectAt(col, row);
+                this.teleport4.push({ x: col * this.tsize, y: row * this.tsize });
+
+                if(this.teleport4.length > 2)
+                {
+                    this.teleport4.shift();
+                }
+            }
+            else if ((typeof value === 'string' || value instanceof String) && value.includes('hero')) {
                 const dir = value.split('_')[1];
                 var direction = Direction.Down;
                 if(dir == "down")
@@ -206,6 +279,11 @@ Game.load = function () {
         Loader.loadImage('gem', './assets/gem.png'),
         Loader.loadImage('switch_off', './assets/switch_off.png'),
         Loader.loadImage('switch_on', './assets/switch_on.png'),
+
+        Loader.loadImage('teleport_1', './assets/teleport-blue.png'),
+        Loader.loadImage('teleport_2', './assets/teleport-red.png'),
+        Loader.loadImage('teleport_3', './assets/teleport-green.png'),
+        Loader.loadImage('teleport_4', './assets/teleport-purple.png'),
 
         Loader.loadImage('ground', './assets/ground.png'),
         Loader.loadImage('tree_base', './assets/tree_base.png'),
@@ -282,6 +360,18 @@ Game._drawGemsAndSwitches = function () {
     map.gems.forEach(gem => {
         this.ctx.drawImage(Loader.getImage("gem"), gem.x, gem.y);
     });
+    map.teleport1.forEach(teleport => {
+        this.ctx.drawImage(Loader.getImage("teleport_1"), teleport.x, teleport.y);
+    });
+    map.teleport2.forEach(teleport => {
+        this.ctx.drawImage(Loader.getImage("teleport_2"), teleport.x, teleport.y);
+    });
+    map.teleport3.forEach(teleport => {
+        this.ctx.drawImage(Loader.getImage("teleport_3"), teleport.x, teleport.y);
+    });
+    map.teleport4.forEach(teleport => {
+        this.ctx.drawImage(Loader.getImage("teleport_4"), teleport.x, teleport.y);
+    });
 }
 
 Game.render = function () {
@@ -303,6 +393,10 @@ function initializeGame(data) {
     map.layers = data.layers;
     map.switches = data.switches;
     map.gems = data.gems;
+    map.teleport1 = data.teleport1 == null ? [] : data.teleport1;
+    map.teleport2 = data.teleport2 == null ? [] : data.teleport2;
+    map.teleport3 = data.teleport3 == null ? [] : data.teleport3;
+    map.teleport4 = data.teleport4 == null ? [] : data.teleport4;
     map.startPosition = data.startPosition;
     map.startDirection = data.startDirection;
 

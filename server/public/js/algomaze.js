@@ -93,7 +93,11 @@ var map = {
 
     switches: [ { x: 128, y: 192, state: false }, { x: 256, y: 192, state: true} ],
     gems: [ { x: 128, y: 64 }],
-    startPosition: { x: 128, y: 128},
+    teleport1: [],
+    teleport2: [],
+    teleport3: [],
+    teleport4: [],
+    startPosition: { x: 128, y: 128 },
     startDirection: Direction.Down,
     getTile: function (layer, col, row) {
         return this.layers[layer][row * map.cols + col];
@@ -315,7 +319,12 @@ Game.load = function () {
         Loader.loadImage('gem', './assets/gem.png'),
 
         Loader.loadImage('switch_off', './assets/switch_off.png'),
-        Loader.loadImage('switch_on', './assets/switch_on.png')
+        Loader.loadImage('switch_on', './assets/switch_on.png'),
+
+        Loader.loadImage('teleport_1', './assets/teleport-blue.png'),
+        Loader.loadImage('teleport_2', './assets/teleport-red.png'),
+        Loader.loadImage('teleport_3', './assets/teleport-green.png'),
+        Loader.loadImage('teleport_4', './assets/teleport-purple.png')
     ];
 };
 
@@ -349,24 +358,28 @@ Game.update = function (delta) {
         if(actionName == "DOWN")
         {
             this.hero.goDown(delta, function() {
+                checkTeleporter(false);
                 Game.actionQueue.shift();
             });
         }
         else if(actionName == "UP")
         {
             this.hero.goUp(delta, function() {
+                checkTeleporter(false);
                 Game.actionQueue.shift();
             });
         }
         else if(actionName == "LEFT")
         {
             this.hero.goLeft(delta, function() {
+                checkTeleporter(false);
                 Game.actionQueue.shift();
             });
         }
         else if(actionName == "RIGHT")
         {
             this.hero.goRight(delta, function() {
+                checkTeleporter(false);
                 Game.actionQueue.shift();
             });
         }
@@ -476,6 +489,19 @@ Game._drawGemsAndSwitches = function()
             this.ctx.drawImage(gem.getImage(), gem.x, gem.y);
         }
     }
+
+    map.teleport1.forEach(teleport => {
+        this.ctx.drawImage(Loader.getImage("teleport_1"), teleport.x, teleport.y);
+    });
+    map.teleport2.forEach(teleport => {
+        this.ctx.drawImage(Loader.getImage("teleport_2"), teleport.x, teleport.y);
+    });
+    map.teleport3.forEach(teleport => {
+        this.ctx.drawImage(Loader.getImage("teleport_3"), teleport.x, teleport.y);
+    });
+    map.teleport4.forEach(teleport => {
+        this.ctx.drawImage(Loader.getImage("teleport_4"), teleport.x, teleport.y);
+    });
 }
 
 Game.render = function () {
@@ -538,6 +564,70 @@ function droite()
 }
 */
 
+function isOnCellIn(x, y, cells)
+{
+    var result = false;
+    for(var cell of cells)
+    {
+        if(cell.x == x && cell.y == y)
+        {
+            result = true;
+            break;
+        }
+    }
+
+    return result;
+}
+
+function getTeleportedToCell(xSrc, ySrc, cells)
+{
+    if(cells[0].x == xSrc && cells[0].y == ySrc)
+    {
+        return cells[1];
+    }
+
+    return cells[0];
+}
+
+function checkTeleporter(grid)
+{
+    var x = grid ? Game.hero.xGrid * map.tsize : Game.hero.x - map.tsize / 2;
+    var y = grid ? Game.hero.yGrid * map.tsize : Game.hero.y - map.tsize / 2;
+
+    var targetCell = null;
+    if(isOnCellIn(x, y, map.teleport1))
+    {
+        targetCell = getTeleportedToCell(x, y, map.teleport1);
+    }
+    if(isOnCellIn(x, y, map.teleport2))
+    {
+        targetCell = getTeleportedToCell(x, y, map.teleport2);
+    }
+    if(isOnCellIn(x, y, map.teleport3))
+    {
+        targetCell = getTeleportedToCell(x, y, map.teleport3);
+    }
+    if(isOnCellIn(x, y, map.teleport4))
+    {
+        targetCell = getTeleportedToCell(x, y, map.teleport4);
+    }
+
+
+    if(targetCell != null)
+    {
+        if(grid)
+        {
+            Game.hero.xGrid = targetCell.x / map.tsize;
+            Game.hero.yGrid = targetCell.y / map.tsize;
+        }
+        else
+        {
+            Game.hero.x = targetCell.x + map.tsize / 2;
+            Game.hero.y = targetCell.y + map.tsize / 2;
+        }
+    }
+}
+
 function moveForward()
 {
     Game.queueAction("AVANCER");
@@ -581,6 +671,8 @@ function moveForward()
             Game.hero.xGrid -= 1;
         }
     }
+
+    checkTeleporter(true);
 }
 
 function turnLeft()
@@ -698,6 +790,10 @@ function initializeGame(data) {
     map.layers = data.layers;
     map.switches = data.switches;
     map.gems = data.gems;
+    map.teleport1 = data.teleport1 == null ? [] : data.teleport1;
+    map.teleport2 = data.teleport2 == null ? [] : data.teleport2;
+    map.teleport3 = data.teleport3 == null ? [] : data.teleport3;
+    map.teleport4 = data.teleport4 == null ? [] : data.teleport4;
     map.startPosition = data.startPosition;
     map.startDirection = data.startDirection;
 
