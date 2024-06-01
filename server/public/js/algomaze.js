@@ -5,6 +5,8 @@ function Gem(x, y)
     this.y = y;
     this.collected = false;
     this.image = Loader.getImage('gem');
+
+    this.gridCollected = false;
 }
 
 Gem.prototype.getImage = function() {
@@ -21,6 +23,7 @@ Gem.prototype.collect = function() {
 
 Gem.prototype.reset = function() {
     this.collected = false;
+    this.gridCollected = false;
 }
 
 function Switch(x, y, initialState)
@@ -29,6 +32,7 @@ function Switch(x, y, initialState)
     this.y = y;
     this.initialState = initialState;
     this.state = this.initialState;
+    this.gridState = this.initialState;
 
     this.images = {}
     this.images[SwitchState.On] = Loader.getImage('switch_on');
@@ -41,6 +45,7 @@ Switch.prototype.getImage = function() {
 
 Switch.prototype.reset = function() {
     this.state = this.initialState;
+    this.gridState = this.initialState;
 }
 
 Switch.prototype.toggle = function() {
@@ -101,7 +106,7 @@ var map = {
         // loop through all layers and return TRUE if any tile is solid
         return this.layers.reduce(function (res, layer, index) {
             var tile = this.getTile(index, col, row);
-            var isSolid = tile === 3 || tile === 5;
+            var isSolid = tile === 3 || tile === 5 || (tile === 0 && layer == 0);
             return res || isSolid;
         }.bind(this), false);
     },
@@ -126,6 +131,8 @@ function Hero(map) {
     this.map = map;
     this.x = this.startX;
     this.y = this.startY;
+    this.xGrid = Math.floor(this.x / map.tsize);
+    this.yGrid = Math.floor(this.y / map.tsize);
     this.width = map.tsize;
     this.height = map.tsize;
 
@@ -235,6 +242,9 @@ Hero.prototype.resetPosition = function()
 {
     this.x = this.startX;
     this.y = this.startY;
+    this.xGrid = Math.floor(this.startX / this.map.tsize);
+    this.yGrid = Math.floor(this.startY / this.map.tsize);
+    this.gridDirection = this.startDirection;
     this.direction = this.startDirection;
 }
 
@@ -531,21 +541,148 @@ function droite()
 function moveForward()
 {
     Game.queueAction("AVANCER");
+
+    var actionName = Game.hero.gridDirection;
+    actionName = actionName.toUpperCase();
+
+    if(actionName == "DOWN")
+    {
+        Game.hero.yGrid += 1;
+
+        if(map.isSolidTileAtXY(Game.hero.xGrid * map.tsize, Game.hero.yGrid * map.tsize))
+        {
+            Game.hero.yGrid -= 1;
+        }
+    }
+    else if(actionName == "UP")
+    {
+        Game.hero.yGrid -= 1;
+
+        if(map.isSolidTileAtXY(Game.hero.xGrid * map.tsize, Game.hero.yGrid * map.tsize))
+        {
+            Game.hero.yGrid += 1;
+        }
+    }
+    else if(actionName == "LEFT")
+    {
+        Game.hero.xGrid -= 1;
+
+        if(map.isSolidTileAtXY(Game.hero.xGrid * map.tsize, Game.hero.yGrid * map.tsize))
+        {
+            Game.hero.xGrid += 1;
+        }
+    }
+    else if(actionName == "RIGHT")
+    {
+        Game.hero.xGrid += 1;
+
+        if(map.isSolidTileAtXY(Game.hero.xGrid * map.tsize, Game.hero.yGrid * map.tsize))
+        {
+            Game.hero.xGrid -= 1;
+        }
+    }
 }
 
 function turnLeft()
 {
     Game.queueAction("TURN_LEFT");
+
+    var direction = Game.hero.gridDirection;
+    if(direction == Direction.Down)
+    {
+        direction = Direction.Right;
+    }
+    else if(direction == Direction.Right)
+    {
+        direction = Direction.Up;
+    }
+    else if(direction == Direction.Up)
+    {
+        direction = Direction.Left;
+    }
+    else if(direction == Direction.Left)
+    {
+        direction = Direction.Down;
+    }
+
+    Game.hero.gridDirection = direction;
 }
 
 function toggleSwitch()
 {
     Game.queueAction("TOGGLE_SWITCH");
+    for(var _switch of Game.switches) {
+        if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
+        {
+            _switch.gridState = !_switch.gridState;
+            break;
+        }
+    }
 }
 
 function collectGem()
 {
     Game.queueAction("COLLECT_GEM");
+
+    for(var gem of Game.gems) {
+        if(gem.x / map.tsize == Game.hero.xGrid && gem.y / map.tsize == Game.hero.yGrid)
+        {
+            gem.gridCollected = true;
+            break;
+        }
+    }
+}
+
+function canCollectGem()
+{
+    var result = false;
+    for(var gem of Game.gems) {
+        if(gem.x / map.tsize == Game.hero.xGrid && gem.y / map.tsize == Game.hero.yGrid && !gem.gridCollected)
+        {
+            result = true;
+            break;
+        }
+    }
+    return result;
+}
+
+function isOnSwitch()
+{
+    var result = false;
+    for(var _switch of Game.switches) {
+        if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
+        {
+            result = true;
+            break;
+        }
+    }
+    return result;
+}
+
+function canActivateSwitch()
+{
+    var result = false;
+    for(var _switch of Game.switches) {
+        if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
+        {
+            result = _switch.gridState;
+            break;
+        }
+    }
+    return result;
+}
+
+function canDeactivateSwitch()
+{
+    var result = false;
+    for(var _switch of Game.switches) {
+        if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
+        {
+            result = _switch.gridState;
+            break;
+        }
+    }
+    return result;
 }
 
 function solve(code)

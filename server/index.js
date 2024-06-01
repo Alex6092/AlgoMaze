@@ -298,7 +298,7 @@ async function checkAnswer(levelId, code)
             // loop through all layers and return TRUE if any tile is solid
             return context.data.layers.reduce(function (res, layer, index) {
                 var tile = context.getTile(index, col, row);
-                var isSolid = tile === 3 || tile === 5;
+                var isSolid = tile === 3 || tile === 5 || (tile === 0 && layer == 0);
                 return res || isSolid;
             }.bind(this), false);
         },
