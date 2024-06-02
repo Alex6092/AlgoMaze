@@ -286,6 +286,10 @@ async function checkAnswer(levelId, code)
         characterDirection: "",
         gems: [],
         switches: [],
+        teleport1: [],
+        teleport2: [],
+        teleport3: [],
+        teleport4: [],
         success: true,
         getTile: (layer, col, row) => {
             return context.data.layers[layer][row * context.data.cols + col];
@@ -366,6 +370,8 @@ async function checkAnswer(levelId, code)
                 context.character.y = 0;
                 context.success = false;
             }
+
+            context.checkTeleporter();
         },
         turnLeft: () => {
             var direction = context.characterDirection;
@@ -406,6 +412,104 @@ async function checkAnswer(levelId, code)
                     _switch.state = !_switch.state;
                 }
             }
+        },
+        canCollectGem: () => {
+            var position = context.character;
+            var result = false;
+            for(var gem of context.gems) {
+                if(position.x == gem.x && position.y == gem.y && !gem.collected)
+                {
+                    result = true;
+                    break;
+                }
+            }
+            return result;
+        },
+        isOnSwitch: () => {
+            var position = context.character;
+            var result = false;
+            for(var _switch of context.switches) {
+                if(_switch.x == position.x && _switch.y == position.y)
+                {
+                    result = true;
+                    break;
+                }
+            }
+            return result;
+        },
+        canActivateSwitch: () => {
+            var position = context.character;
+            var result = false;
+            for(var _switch of context.switches) {
+                if(_switch.x == position.x && _switch.y == position.y)
+                {
+                    result = _switch.state;
+                    break;
+                }
+            }
+            return result;
+        },
+        canDeactivateSwitch: () => {
+            var position = context.character;
+            var result = false;
+            for(var _switch of context.switches) {
+                if(_switch.x == position.x && _switch.y == position.y)
+                {
+                    result = !_switch.state;
+                    break;
+                }
+            }
+            return result;
+        },
+        isOnCellIn: (x, y, cells) => {
+            var result = false;
+            for(var cell of cells)
+            {
+                if(cell.x == x && cell.y == y)
+                {
+                    result = true;
+                    break;
+                }
+            }
+
+            return result;
+        },
+        getTeleportedToCell: (xSrc, ySrc, cells) => {
+            if(cells[0].x == xSrc && cells[0].y == ySrc)
+                {
+                    return cells[1];
+                }
+            
+                return cells[0];
+        },
+        checkTeleporter: () => {
+            var x = context.character.x;
+            var y = context.character.y;
+
+            var targetCell = null;
+            if(context.isOnCellIn(x, y, context.teleport1))
+            {
+                targetCell = context.getTeleportedToCell(x, y, context.teleport1);
+            }
+            if(context.isOnCellIn(x, y, context.teleport2))
+            {
+                targetCell = context.getTeleportedToCell(x, y, context.teleport2);
+            }
+            if(context.isOnCellIn(x, y, context.teleport3))
+            {
+                targetCell = context.getTeleportedToCell(x, y, context.teleport3);
+            }
+            if(context.isOnCellIn(x, y, context.teleport4))
+            {
+                targetCell = context.getTeleportedToCell(x, y, context.teleport4);
+            }
+
+
+            if(targetCell != null)
+            {
+                context.character.x = targetCell.x;
+                context.character.y = targetCell.y;
+            }
         }
     };
 
@@ -430,6 +534,41 @@ async function checkAnswer(levelId, code)
             x: _switch.x / context.data.tsize,
             y: _switch.y / context.data.tsize,
             state: _switch.state
+        });
+    }
+
+    // Initialize level teleporters :
+    context.data.teleport1 = context.data.teleport1 == null ? [] : context.data.teleport1;
+    context.data.teleport2 = context.data.teleport2 == null ? [] : context.data.teleport2;
+    context.data.teleport3 = context.data.teleport3 == null ? [] : context.data.teleport3;
+    context.data.teleport4 = context.data.teleport4 == null ? [] : context.data.teleport4;
+
+    for(var teleport of context.data.teleport1)
+    {
+        context.teleport1.push({
+            x: teleport.x / context.data.tsize,
+            y: teleport.y / context.data.tsize
+        });
+    }
+    for(var teleport of context.data.teleport2)
+    {
+        context.teleport2.push({
+            x: teleport.x / context.data.tsize,
+            y: teleport.y / context.data.tsize
+        });
+    }
+    for(var teleport of context.data.teleport3)
+    {
+        context.teleport3.push({
+            x: teleport.x / context.data.tsize,
+            y: teleport.y / context.data.tsize
+        });
+    }
+    for(var teleport of context.data.teleport4)
+    {
+        context.teleport4.push({
+            x: teleport.x / context.data.tsize,
+            y: teleport.y / context.data.tsize
         });
     }
     

@@ -770,7 +770,7 @@ function canDeactivateSwitch()
     for(var _switch of Game.switches) {
         if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
         {
-            result = _switch.gridState;
+            result = !_switch.gridState;
             break;
         }
     }
