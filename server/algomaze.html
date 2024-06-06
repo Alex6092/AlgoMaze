@@ -90,7 +90,10 @@
                 const currentLevelItem = document.querySelector(`.level-list li[data-level-id='${levelId}']`);
                 if (currentLevelItem) {
                     currentLevelItem.classList.add('highlight');
-                    currentLevelItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const levelList = document.getElementById('level-list');
+                    if (levelList.scrollHeight > levelList.clientHeight) {
+                        currentLevelItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }
             }
 
