@@ -43,23 +43,67 @@
                 <div class="code-editor-container">
                     <h2>Editeur de code Javascript :</h2>
                     <textarea id="code-editor">// Votre solution ici ...</textarea>
-                    <button id="run-button">Exécuter la solution</button>
-                    <button id="submit-button">Vérifier la solution</button>
+                    <img class="command-buttons-img" id="run-button" src="/assets/run.png" alt="Exécuter la solution" title="Exécuter la solution">
+                    <img class="command-buttons-img" id="submit-button" src="/assets/verify.png" alt="Vérifier la solution" title="Vérifier la solution">
+                    <div class="command-buttons">
+                        <h2>Saisie rapide : </h2>
+                        <button onclick="insertCommand('moveForward();')">moveForward()</button>
+                        <button onclick="insertCommand('turnLeft();')">turnLeft()</button>
+                        <button onclick="insertCommand('toggleSwitch();')">toggleSwitch()</button>
+                        <button onclick="insertCommand('collectGem();')">collectGem()</button>
+                    </div>
                 </div>
-        </div>
+                
+            </div>
+
+            <div id="notification-container"></div>
             
         </div><!-- main wrapper -->
 
        
         <script>
+            let editor;
+
+            function showNotification(message, type) {
+                const notificationContainer = document.getElementById('notification-container');
+                const notification = document.createElement('div');
+                notification.className = `notification ${type}`;
+                notification.innerText = message;
+                notificationContainer.appendChild(notification);
+
+                setTimeout(() => {
+                    notification.remove();
+                }, 2000);
+            }
+
+            function insertCommand(command) {
+                var doc = editor.getDoc();
+                var cursor = doc.getCursor();
+                doc.replaceRange(command + '\n', cursor);
+            }
+
+            function highlightCurrentLevel(levelId) {
+                const levelListItems = document.querySelectorAll('.level-list li');
+                levelListItems.forEach(item => {
+                    item.classList.remove('highlight');
+                });
+                const currentLevelItem = document.querySelector(`.level-list li[data-level-id='${levelId}']`);
+                if (currentLevelItem) {
+                    currentLevelItem.classList.add('highlight');
+                    currentLevelItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+
             var currentLevelId = 1;
             document.addEventListener("DOMContentLoaded", async function() {
                 const token = localStorage.getItem('token');
-                var editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+                editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
                     lineNumbers: true,
                     mode: "javascript",
                     theme: "default"
                 });
+
+                
 
                 document.getElementById("run-button").addEventListener("click", function() {
                     var code = editor.getValue();
@@ -67,7 +111,7 @@
                         solve(code);
                     } catch (e) {
                         console.error(e);
-                        alert('Error executing script: ' + e.message);
+                        showNotification('Erreur lors de l\'exécution du script : ' + e.message, 'error');
                     }
                 });
 
@@ -88,15 +132,20 @@
                         });
 
                         let result = await response.json();
-                        alert("Server response: " + result);
+                        
                         if(result == true)
                         {
+                            showNotification('Bravo, la solution est valide !', 'success');
                             await fetchLevels();
                             await fetchPlayerProgress();
                         }
+                        else
+                        {
+                            showNotification('La solution n\'est pas valide, persévérez !', 'error');
+                        }
                     } catch (error) {
                         console.error('Error:', error);
-                        alert('Error submitting code: ' + error.message);
+                        showNotification('Erreur lors de la soumission du code : ' + error.message, 'error');
                     }
                 });
 
@@ -116,7 +165,7 @@
                         displayLevels(levelsIds);
                     } catch (error) {
                         console.error('Error fetching levels:', error);
-                        alert('Error fetching levels: ' + error.message);
+                        showNotification('Erreur lors de la récupération des niveaux : ' + error.message, 'error');
                     }
                 }
 
@@ -125,10 +174,13 @@
                     levelList.innerHTML = '';
                     levels.forEach(levelId => {
                         const li = document.createElement('li');
-                        li.textContent = `Level ${levelId}`;
+                        li.textContent = `Niveau ${levelId}`;
+                        li.setAttribute('data-level-id', levelId);
                         li.addEventListener('click', () => loadLevel(levelId, token));
                         levelList.appendChild(li);
                     });
+
+                    highlightCurrentLevel(currentLevelId); // Highlight the initial level
                 }
 
                 async function fetchPlayerProgress()
@@ -150,7 +202,7 @@
                             await loadLevel(levelsIds[levelsIds.length - 1], token);
                     } catch (error) {
                         console.error('Error fetching levels:', error);
-                        alert('Error fetching levels: ' + error.message);
+                        showNotification('Erreur lors du chargement de votre progression : ' + error.message, 'error');
                     }
 
                     //loadLevel(1, token);
@@ -172,7 +224,7 @@
                         editor.setValue(data);
                     } catch (error) {
                         console.error('Error loading level:', error);
-                        alert('Error loading level: ' + error.message);
+                        showNotification('Erreur lors de la récupération du niveau : ' + error.message, 'error');
                     }
                 }
 
@@ -192,9 +244,10 @@
                         await loadPlayerSentence(levelId, token);
                         initializeGame(data);
                         currentLevelId = levelId;
+                        highlightCurrentLevel(levelId);
                     } catch (error) {
                         console.error('Error loading level:', error);
-                        alert('Error loading level: ' + error.message);
+                        showNotification('Erreur lors de la récupération du niveau : ' + error.message, 'error');
                     }
                 }
 

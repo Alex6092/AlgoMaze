@@ -1,60 +1,118 @@
-<!-- login.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>Connexion - AlgoMaze</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(to right, #1f4037, #99f2c8);
+            font-family: Arial, sans-serif;
+        }
+        .login-container {
+            background: #fff;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+        .login-container h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        .input-group label {
+            display: block;
+            text-align: left;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        .input-group input {
+            width: calc(100% - 20px);
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .login-container button {
+            background: #1f4037;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .login-container button:hover {
+            background: #136634;
+        }
+        .login-container .links {
+            margin-top: 15px;
+        }
+        .login-container .links a {
+            color: #1f4037;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+        .login-container .links a:hover {
+            color: #136634;
+        }
+    </style>
 </head>
 <body>
-    <h1>Login</h1>
-    <form id="login-form">
-        <input type="text" id="username" placeholder="Username" required>
-        <input type="password" id="password" placeholder="Password" required>
-        <button type="submit">Login</button>
-    </form>
-    <h1>Register</h1>
-    <form id="register-form">
-        <input type="text" id="reg-username" placeholder="Username" required>
-        <input type="password" id="reg-password" placeholder="Password" required>
-        <button type="submit">Register</button>
-    </form>
+    <div class="login-container">
+        <h2>Connexion à AlgoMaze</h2>
+        <form id="login-form">
+            <div class="input-group">
+                <label for="username">Nom d'utilisateur</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="input-group">
+                <label for="password">Mot de passe</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit">Connexion</button>
+        </form>
+        <!--<div class="links">
+            <a href="#">Forgot Password?</a> | 
+            <a href="#">Create an Account</a>
+        </div>-->
+    </div>
+
     <script>
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const response = await fetch('/user/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password }),
-                credentials: 'include'
-            });
-            const data = await response.json();
-            if (data.token) {
+        document.getElementById("login-form").addEventListener("submit", async function(event) {
+            event.preventDefault();
+
+            const username = document.getElementById("username").value;
+            const password = document.getElementById("password").value;
+
+            try {
+                const response = await fetch('/user/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Login failed');
+                }
+
+                const data = await response.json();
                 localStorage.setItem('token', data.token);
                 window.location.href = '/maze';
-            } else {
-                alert(data.error);
-            }
-        });
-
-        document.getElementById('register-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('reg-username').value;
-            const password = document.getElementById('reg-password').value;
-            const response = await fetch('/user/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password }),
-                credentials: 'include'
-            });
-            const data = await response.json();
-            if (data.message) {
-                alert(data.message);
-                // Optionally, log the user in directly or redirect to login page
-            } else {
-                alert(data.error);
+            } catch (error) {
+                console.error('Error logging in:', error);
+                alert('Error logging in: ' + error.message);
             }
         });
     </script>
