@@ -176,7 +176,18 @@ app.post('/checkanswer', async (req, res) => {
 
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
         {
-            const result = await checkAnswer(levelId, code);
+            var levelData = JSON.parse(await loadLevel(levelId));
+            var hasRandomTiles = levelData.randomTile != null && levelData.randomTile.length > 0;
+
+            var result = false; 
+            var nbVerify = 0;
+            // Si il y a des tuiles aléatoires, on réalise plusieurs tests du code :
+            do
+            {
+                result = checkAnswer(levelData, code);
+                nbVerify++;
+            } while(hasRandomTiles && nbVerify < 10 && result);
+            
 
             // L'utilisateur a réussi le niveau :
             // On met à jour son progrès et on enregistre sa réponse.
@@ -277,11 +288,68 @@ async function saveLevel(data, lvlId)
     return levelId;
 }
 
+function getRandomBinary() {
+    return Math.round(Math.random());
+}
+
+function initializeGemsAndSwitches(context) {
+    // Initialize level gem :
+    context.gems = [];
+    for(var gem of context.data.gems)
+    {
+        context.gems.push({
+            x: gem.x / context.data.tsize,
+            y: gem.y / context.data.tsize,
+            collected: false
+        });
+    }
+
+    context.switches = [];
+    // Initialize level switches :
+    for(var _switch of context.data.switches)
+    {
+        context.switches.push({
+            x: _switch.x / context.data.tsize,
+            y: _switch.y / context.data.tsize,
+            state: _switch.state
+        });
+    }
+
+    for(var i = 0; i < context.data.randomTile.length; i++)
+    {
+        var tile = context.data.randomTile[i];
+        var spawn = getRandomBinary();
+        if(spawn)
+        {
+            var type = getRandomBinary();
+            if(type)
+            {
+                // Spawn gemme
+                context.gems.push({
+                    x: tile.x / context.data.tsize,
+                    y: tile.y / context.data.tsize,
+                    collected: false
+                });
+            }
+            else
+            {
+                // Spawn interrupteur
+                var open = getRandomBinary();
+                context.switches.push({
+                    x: tile.x / context.data.tsize,
+                    y: tile.y / context.data.tsize,
+                    state: open
+                });
+            }
+        }
+    }
+}
+
 // Maze logic :
-async function checkAnswer(levelId, code)
+function checkAnswer(levelData, code)
 {
     var context = {
-        data: JSON.parse(await loadLevel(levelId)),
+        data: levelData,
         character: {},
         characterDirection: "",
         gems: [],
@@ -290,6 +358,7 @@ async function checkAnswer(levelId, code)
         teleport2: [],
         teleport3: [],
         teleport4: [],
+        randomTile: [],
         success: true,
         getTile: (layer, col, row) => {
             return context.data.layers[layer][row * context.data.cols + col];
@@ -443,7 +512,7 @@ async function checkAnswer(levelId, code)
             for(var _switch of context.switches) {
                 if(_switch.x == position.x && _switch.y == position.y)
                 {
-                    result = _switch.state;
+                    result = !_switch.state;
                     break;
                 }
             }
@@ -455,7 +524,7 @@ async function checkAnswer(levelId, code)
             for(var _switch of context.switches) {
                 if(_switch.x == position.x && _switch.y == position.y)
                 {
-                    result = !_switch.state;
+                    result = _switch.state;
                     break;
                 }
             }
@@ -517,25 +586,10 @@ async function checkAnswer(levelId, code)
     context.character.y = context.data.startPosition.y / context.data.tsize;
     context.characterDirection = context.data.startDirection;
 
-    // Initialize level gem :
-    for(var gem of context.data.gems)
-    {
-        context.gems.push({
-            x: gem.x / context.data.tsize,
-            y: gem.y / context.data.tsize,
-            collected: false
-        });
-    }
+    // Manage random tiles :
+    context.data.randomTile = context.data.randomTile == null ? [] : context.data.randomTile;
 
-    // Initialize level switches :
-    for(var _switch of context.data.switches)
-    {
-        context.switches.push({
-            x: _switch.x / context.data.tsize,
-            y: _switch.y / context.data.tsize,
-            state: _switch.state
-        });
-    }
+    initializeGemsAndSwitches(context);
 
     // Initialize level teleporters :
     context.data.teleport1 = context.data.teleport1 == null ? [] : context.data.teleport1;

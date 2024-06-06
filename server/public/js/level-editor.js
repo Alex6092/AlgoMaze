@@ -35,6 +35,10 @@ function addSelectorItems() {
         currentTileType = 'switch_on';
     });
 
+    addToSelectorContainer('random', () => {
+        currentTileType = 'random';
+    });
+
     // Add teleporter images 
     const teleporterImages = ['teleport_1', 'teleport_2', 'teleport_3', 'teleport_4'];
     teleporterImages.forEach((imgName, index) => {
@@ -97,6 +101,7 @@ var map = {
     teleport2: [],
     teleport3: [],
     teleport4: [],
+    randomTile: [],
     startPosition: { x: 128, y: 128 },
     startDirection: Direction.Down,
     removeObjectAt: function (x, y){
@@ -162,6 +167,16 @@ var map = {
                 break;
             }
         }
+
+        for(var i = 0; i < this.randomTile.length; i++)
+        {
+            var tile = this.randomTile[i];
+            if(tile.x == x && tile.y == y)
+            {
+                this.randomTile.splice(i, 1);
+                break;
+            }
+        }
     },
     setTile: function (col, row, value) {
         if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
@@ -219,6 +234,11 @@ var map = {
                 {
                     this.teleport4.shift();
                 }
+            }
+            else if (value == 'random')
+            {
+                this.removeObjectAt(col, row);
+                this.randomTile.push({ x: col * this.tsize, y: row * this.tsize });
             }
             else if ((typeof value === 'string' || value instanceof String) && value.includes('hero')) {
                 const dir = value.split('_')[1];
@@ -284,6 +304,8 @@ Game.load = function () {
         Loader.loadImage('teleport_2', './assets/teleport-red.png'),
         Loader.loadImage('teleport_3', './assets/teleport-green.png'),
         Loader.loadImage('teleport_4', './assets/teleport-purple.png'),
+
+        Loader.loadImage('random', './assets/random.png'),
 
         Loader.loadImage('ground', './assets/ground.png'),
         Loader.loadImage('tree_base', './assets/tree_base.png'),
@@ -372,6 +394,9 @@ Game._drawGemsAndSwitches = function () {
     map.teleport4.forEach(teleport => {
         this.ctx.drawImage(Loader.getImage("teleport_4"), teleport.x, teleport.y);
     });
+    map.randomTile.forEach(tile => {
+        this.ctx.drawImage(Loader.getImage("random"), tile.x, tile.y);
+    });
 }
 
 Game.render = function () {
@@ -397,6 +422,7 @@ function initializeGame(data) {
     map.teleport2 = data.teleport2 == null ? [] : data.teleport2;
     map.teleport3 = data.teleport3 == null ? [] : data.teleport3;
     map.teleport4 = data.teleport4 == null ? [] : data.teleport4;
+    map.randomTile = data.randomTile == null ? [] : data.randomTile;
     map.startPosition = data.startPosition;
     map.startDirection = data.startDirection;
 

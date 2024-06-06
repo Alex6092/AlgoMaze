@@ -1,4 +1,3 @@
-
 function Gem(x, y)
 {
     this.x = x;
@@ -97,6 +96,7 @@ var map = {
     teleport2: [],
     teleport3: [],
     teleport4: [],
+    randomTile: [],
     startPosition: { x: 128, y: 128 },
     startDirection: Direction.Down,
     getTile: function (layer, col, row) {
@@ -324,8 +324,47 @@ Game.load = function () {
         Loader.loadImage('teleport_1', './assets/teleport-blue.png'),
         Loader.loadImage('teleport_2', './assets/teleport-red.png'),
         Loader.loadImage('teleport_3', './assets/teleport-green.png'),
-        Loader.loadImage('teleport_4', './assets/teleport-purple.png')
+        Loader.loadImage('teleport_4', './assets/teleport-purple.png'),
+
+        Loader.loadImage('random', './assets/random.png')
     ];
+};
+
+Game.initializeGemsAndSwitches = function() {
+    this.switches = [];
+    for(var i = 0; i < map.switches.length; i++)
+    {
+        var _switch = map.switches[i];
+        this.switches.push(new Switch(_switch.x, _switch.y, _switch.state ? SwitchState.On : SwitchState.Off));
+    }
+
+    this.gems = [];
+    for(var i = 0; i < map.gems.length; i++)
+    {
+        var gem = map.gems[i];
+        this.gems.push(new Gem(gem.x, gem.y));
+    }
+
+    for(var i = 0; i < map.randomTile.length; i++)
+    {
+        var tile = map.randomTile[i];
+        var spawn = getRandomBinary();
+        if(spawn)
+        {
+            var type = getRandomBinary();
+            if(type)
+            {
+                // Spawn gemme
+                this.gems.push(new Gem(tile.x, tile.y));
+            }
+            else
+            {
+                // Spawn interrupteur
+                var open = getRandomBinary();
+                this.switches.push(new Switch(tile.x, tile.y, open ? SwitchState.On : SwitchState.Off));
+            }
+        }
+    }
 };
 
 Game.init = function () {
@@ -335,19 +374,8 @@ Game.init = function () {
 
     this.actionQueue = new Array();
     this.hero = new Hero(map);
-    this.switches = [];
-    for(var i = 0; i < map.switches.length; i++)
-    {
-        _switch = map.switches[i];
-        this.switches.push(new Switch(_switch.x, _switch.y, _switch.state ? SwitchState.On : SwitchState.Off));
-    }
-
-    this.gems = [];
-    for(var i = 0; i < map.gems.length; i++)
-    {
-        gem = map.gems[i];
-        this.gems.push(new Gem(gem.x, gem.y));
-    }
+    this.initializeGemsAndSwitches();
+    this.displayRandomTile = true;
 };
 
 Game.update = function (delta) {
@@ -426,6 +454,17 @@ Game.update = function (delta) {
             Game.actionQueue.shift();
         }
     }
+
+    if(this.actionQueue.length == 0 && Game.displayRandomTile == false)
+    {
+        setTimeout(() => {
+            if(this.actionQueue.length == 0 && Game.displayRandomTile == false) 
+            {
+                Game.displayRandomTile = true;
+                Game.reset();
+            }
+        }, 1000);
+    }
 };
 
 Game._drawLayer = function (layer) {
@@ -502,6 +541,13 @@ Game._drawGemsAndSwitches = function()
     map.teleport4.forEach(teleport => {
         this.ctx.drawImage(Loader.getImage("teleport_4"), teleport.x, teleport.y);
     });
+
+    if(this.displayRandomTile)
+    {
+        map.randomTile.forEach(tile => {
+            this.ctx.drawImage(Loader.getImage("random"), tile.x, tile.y);
+        });
+    }
 }
 
 Game.render = function () {
@@ -531,6 +577,7 @@ Game.queueAction = function(actionName) {
 Game.reset = function() {
     this.actionQueue = [];
     this.hero.resetPosition();
+    /*
     for(var i = 0; i < this.switches.length; i++)
     {
         this.switches[i].reset();
@@ -540,6 +587,8 @@ Game.reset = function() {
     {
         this.gems[i].reset();
     }
+    */
+    this.initializeGemsAndSwitches();
 }
 
 /*
@@ -757,7 +806,7 @@ function canActivateSwitch()
     for(var _switch of Game.switches) {
         if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
         {
-            result = _switch.gridState;
+            result = _switch.gridState == SwitchState.Off;
             break;
         }
     }
@@ -770,7 +819,7 @@ function canDeactivateSwitch()
     for(var _switch of Game.switches) {
         if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
         {
-            result = !_switch.gridState;
+            result = _switch.gridState == SwitchState.On;
             break;
         }
     }
@@ -780,7 +829,12 @@ function canDeactivateSwitch()
 function solve(code)
 {
     Game.reset();
+    Game.displayRandomTile = false;
     eval(code);
+}
+
+function getRandomBinary() {
+    return Math.round(Math.random());
 }
 
 function initializeGame(data) {
@@ -794,6 +848,7 @@ function initializeGame(data) {
     map.teleport2 = data.teleport2 == null ? [] : data.teleport2;
     map.teleport3 = data.teleport3 == null ? [] : data.teleport3;
     map.teleport4 = data.teleport4 == null ? [] : data.teleport4;
+    map.randomTile = data.randomTile == null ? [] : data.randomTile;
     map.startPosition = data.startPosition;
     map.startDirection = data.startDirection;
 
