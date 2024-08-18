@@ -106,7 +106,7 @@ app.get('/levels', async (req, res) => {
             }
         }
 
-        sentence.sort();
+        sentence.sort(function(a, b){return a-b});
 
         res.send(JSON.stringify(sentence));
     }
