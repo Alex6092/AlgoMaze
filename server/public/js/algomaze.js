@@ -826,6 +826,81 @@ function canDeactivateSwitch()
     return result;
 }
 
+function isBlocked() 
+{
+    var result = false;
+    
+    var actionName = Game.hero.gridDirection;
+    actionName = actionName.toUpperCase();
+
+    if(actionName == "DOWN")
+    {
+        Game.hero.yGrid += 1;
+
+        if(map.isSolidTileAtXY(Game.hero.xGrid * map.tsize, Game.hero.yGrid * map.tsize))
+        {
+            result = true;
+        }
+        Game.hero.yGrid -= 1;
+    }
+    else if(actionName == "UP")
+    {
+        Game.hero.yGrid -= 1;
+
+        if(map.isSolidTileAtXY(Game.hero.xGrid * map.tsize, Game.hero.yGrid * map.tsize))
+        {
+            result = true;
+        }
+        Game.hero.yGrid += 1;
+    }
+    else if(actionName == "LEFT")
+    {
+        Game.hero.xGrid -= 1;
+
+        if(map.isSolidTileAtXY(Game.hero.xGrid * map.tsize, Game.hero.yGrid * map.tsize))
+        {
+            result = true;
+        }
+        Game.hero.xGrid += 1;
+    }
+    else if(actionName == "RIGHT")
+    {
+        Game.hero.xGrid += 1;
+
+        if(map.isSolidTileAtXY(Game.hero.xGrid * map.tsize, Game.hero.yGrid * map.tsize))
+        {
+            result = true;
+        }
+        Game.hero.xGrid -= 1;
+    }
+
+    return result;
+}
+
+// Solution pour pas trop se faire chier ...
+function isBlockedLeft()
+{
+    var result = false;
+    turnLeft();
+    result = isBlocked();
+    turnLeft();
+    turnLeft();
+    turnLeft();
+    return result;
+}
+
+function isBlockedRight()
+{
+    var result = false;
+    turnLeft();
+    turnLeft();
+    turnLeft();
+    result = isBlocked();
+    turnLeft();
+    return result;
+}
+// ------------------------------------------------
+
 function solve(code)
 {
     Game.reset();

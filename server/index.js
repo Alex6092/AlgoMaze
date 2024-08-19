@@ -413,7 +413,7 @@ function checkAnswer(levelData, code)
 
                 if(context.isSolidTileAtXY(context.character.x, context.character.y))
                 {
-                    context.character.y -= 1;
+                    context.character.x -= 1;
                     context.success = false;
                 }
             }
@@ -579,6 +579,74 @@ function checkAnswer(levelData, code)
                 context.character.x = targetCell.x;
                 context.character.y = targetCell.y;
             }
+        },
+        isBlocked: () => {
+            var direction = context.characterDirection;
+            var result = false;
+            if(direction == Direction.Down)
+            {
+                context.character.y += 1;
+
+                if(context.isSolidTileAtXY(context.character.x, context.character.y))
+                {
+                    result = true;
+                }
+
+                context.character.y -= 1;
+            }
+            else if(direction == Direction.Up)
+            {
+                context.character.y -= 1;
+
+                if(context.isSolidTileAtXY(context.character.x, context.character.y))
+                {
+                    result = true;
+                }
+
+                context.character.y += 1;
+            }
+            else if(direction == Direction.Left)
+            {
+                context.character.x -= 1;
+
+                if(context.isSolidTileAtXY(context.character.x, context.character.y))
+                {
+                    result = true;
+                }
+
+                context.character.x += 1;
+            }
+            else if(direction == Direction.Right)
+            {
+                context.character.x += 1;
+
+                if(context.isSolidTileAtXY(context.character.x, context.character.y))
+                {
+                    result = true;
+                }
+
+                context.character.x -= 1;
+            }
+
+            return result;
+        },
+        isBlockedLeft: () => {
+            var result = false;
+            context.turnLeft();
+            result = context.isBlocked();
+            context.turnLeft();
+            context.turnLeft();
+            context.turnLeft();
+            return result;
+        },
+        isBlockedRight: () => {
+            var result = false;
+            context.turnLeft();
+            context.turnLeft();
+            context.turnLeft();
+            result = context.isBlocked();
+            context.turnLeft();
+            return result;
         }
     };
 
