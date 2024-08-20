@@ -106,6 +106,9 @@ var map = {
         var col = Math.floor(x / this.tsize);
         var row = Math.floor(y / this.tsize);
 
+        if(col < 0 || col >= this.cols || row < 0 || row >= this.rows)
+            return true;
+
         // tiles 3 and 5 are solid -- the rest are walkable
         // loop through all layers and return TRUE if any tile is solid
         return this.layers.reduce(function (res, layer, index) {
@@ -348,7 +351,7 @@ Game.initializeGemsAndSwitches = function() {
     for(var i = 0; i < map.randomTile.length; i++)
     {
         var tile = map.randomTile[i];
-        var spawn = getRandomBinary();
+        var spawn = getRandomBinary() || getRandomBinary();
         if(spawn)
         {
             var type = getRandomBinary();

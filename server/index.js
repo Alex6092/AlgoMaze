@@ -318,7 +318,7 @@ function initializeGemsAndSwitches(context) {
     for(var i = 0; i < context.data.randomTile.length; i++)
     {
         var tile = context.data.randomTile[i];
-        var spawn = getRandomBinary();
+        var spawn = getRandomBinary() || getRandomBinary();
         if(spawn)
         {
             var type = getRandomBinary();
@@ -366,6 +366,9 @@ function checkAnswer(levelData, code)
         isSolidTileAtXY: (x, y) => {
             var col = x;
             var row = y;
+
+            if(col < 0 || col >= context.data.cols || row < 0 || row >= context.data.rows)
+                return true;
     
             // tiles 3 and 5 are solid -- the rest are walkable
             // loop through all layers and return TRUE if any tile is solid
