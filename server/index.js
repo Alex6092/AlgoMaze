@@ -21,7 +21,7 @@ app.use('/user', userRouter);
 // Middleware pour vérifier l'authentification
 app.use((req, res, next) => {
     const token = req.cookies.token;
-    const publicPaths = ['/login', '/user/login', '/', '/user/register']; // Ajoutez ici les routes publiques
+    const publicPaths = ['/login', '/register', '/user/login', '/', '/user/register']; // Ajoutez ici les routes publiques
 
     //console.log(`Requested path: ${req.path}`); // Log du chemin demandé
     //console.log(`Token: ${token}`); // Log du token
@@ -58,6 +58,10 @@ app.get('/', (req, res) => {
     res.sendFile(__dirname + '/login.html');
 });
 
+app.get('/register', (req, res) => {
+    res.sendFile(__dirname + '/register.html');
+});
+
 // Routes protégées :
 
 app.get('/maze', (req, res) => {
@@ -74,6 +78,28 @@ app.get('/editor', async (req, res) => {
             var user = JSON.parse(await redisClient.get('user:' + decoded.userId));
             if(user.isAdmin)
                 res.sendFile(__dirname + '/level-editor.html');
+            else
+                res.redirect('/maze');
+        }
+        catch(error)
+        {
+            res.status(500).send({error: "Unexpected error"});
+        }
+    }
+    else
+        res.status(403).send({error: "Not authenticated"});
+});
+
+app.get('/progress', async (req, res) => {
+    const token = req.cookies.token;
+    if (token) {
+        try {
+            const decoded = verifyToken(token);
+            req.user = decoded;
+
+            var user = JSON.parse(await redisClient.get('user:' + decoded.userId));
+            if(user.isAdmin)
+                res.sendFile(__dirname + '/progress.html');
             else
                 res.redirect('/maze');
         }
@@ -257,6 +283,42 @@ app.post('/savelevel', async (req, res) => {
     } catch (error) {
         console.log("[ERROR] /savelevel " + error);
         res.status(500).send({ error: 'Failed to save level' });
+    }
+});
+
+// Progression des utilisateurs :
+app.get('/userprogressreport', async (req, res) => {
+    try
+    {
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+
+        if(user.isAdmin)
+        {
+            var userKeys = await redisClient.keys("user:*");
+
+            var result = [];
+            for(var userKey of userKeys)
+            {
+                var userData = await redisClient.get(userKey);
+                userData = JSON.parse(userData);
+                result.push({
+                    username: userData.username,
+                    lastCompletedLevel: userData.lastCompletedLevel
+                });
+            }
+
+            result.sort(function(a, b) { return a.username.localeCompare(b.username) });
+
+            res.status(200).send(result);
+        }
+        else
+        {
+            res.status(403).send({ error: 'You are not an administrator'});
+        }
+    } catch (error) {
+        console.log("[ERROR] /userprogressreport " + error);
+        res.status(500).send({ error: 'Failed to get user progress data' });
     }
 });
 
