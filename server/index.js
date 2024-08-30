@@ -21,7 +21,7 @@ app.use('/user', userRouter);
 // Middleware pour vérifier l'authentification
 app.use((req, res, next) => {
     const token = req.cookies.token;
-    const publicPaths = ['/login', '/register', '/user/login', '/', '/user/register']; // Ajoutez ici les routes publiques
+    const publicPaths = ['/login', '/register', '/user/login', '/', '/user/register', '/check_completion']; // Ajoutez ici les routes publiques
 
     //console.log(`Requested path: ${req.path}`); // Log du chemin demandé
     //console.log(`Token: ${token}`); // Log du token
@@ -319,6 +319,30 @@ app.get('/userprogressreport', async (req, res) => {
     } catch (error) {
         console.log("[ERROR] /userprogressreport " + error);
         res.status(500).send({ error: 'Failed to get user progress data' });
+    }
+});
+
+app.post('/check_completion', async (req, res) => {
+    try
+    {
+        const checkData = req.body;
+        var user = checkData.username.toLowerCase();
+        var level = checkData.levelnumber;
+
+        if(await redisClient.exists('user:' + user))
+        {
+            var storedUser = await redisClient.get('user:' + user);
+            storedUser = JSON.parse(storedUser);
+            var result = storedUser.lastCompletedLevel >= level;
+            res.status(200).send({ completed: result });
+        }
+        else
+        {
+            res.status(200).send({ completed: false });
+        }
+    } catch (error) {
+        console.log("[ERROR] /check_completion " + error);
+        res.status(500).send({ error: 'Failed to get user progress check' });
     }
 });
 
