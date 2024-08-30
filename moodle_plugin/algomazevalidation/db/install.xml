@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XMLDB PATH="mod/algomazevalidation/db" VERSION="20240830" COMMENT="XMLDB file for Moodle mod/algomazevalidation">
+    <TABLES>
+        <TABLE NAME="algomazevalidation" COMMENT="Default comment for algomazevalidation, please edit me">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" UNSIGNED="true" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="course" TYPE="int" LENGTH="10" UNSIGNED="true" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="intro" TYPE="text" NOTNULL="false"/>
+                <FIELD NAME="introformat" TYPE="int" LENGTH="4" UNSIGNED="true" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="levelnumber" TYPE="int" LENGTH="10" UNSIGNED="true" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" UNSIGNED="true" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" UNSIGNED="true" NOTNULL="true" DEFAULT="0"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="course_fk" TYPE="foreign" FIELDS="course" REFTABLE="course" REFFIELDS="id"/>
+            </KEYS>
+
+            <INDEXES>
+                <INDEX NAME="course_name_idx" UNIQUE="false" FIELDS="course, name"/>
+                <INDEX NAME="course" UNIQUE="false" FIELDS="course"/>
+            </INDEXES>
+        </TABLE>
+    </TABLES>
+</XMLDB>
+
