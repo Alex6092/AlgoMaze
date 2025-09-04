@@ -34,6 +34,11 @@ app.use((req, res, next) => {
         try {
             const decoded = verifyToken(token);
             req.user = decoded;
+            // Disable result caching:
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+            res.setHeader('Surrogate-Control', 'no-store'); // pour certains CDN
             //console.log('Token valid, user authenticated');
             return next();
         } catch (err) {
