@@ -332,7 +332,7 @@
                     highlightCurrentLevel(currentLevelId);
                 }
 
-                async function fetchPlayerProgress() {
+                async function fetchPlayerProgress(forceLevel) {
                     try {
                         let response = await fetch('/user/progress', {
                             headers: { 'Authorization': 'Bearer ' + token },
@@ -341,10 +341,17 @@
                         if (!response.ok) throw new Error('Network response was not ok');
                         let progress = await response.json();
                         playerLastCompletedLevel = progress.progress;
-                        if (levelsIds[levelsIds.length - 1] >= progress.progress + 1)
+
+                        // Si un niveau est explicitement demandé (ex. arrivée depuis Moodle via /maze?level=N)
+                        // et que l'étudiant y a accès (présent dans levelsIds, qui est filtré côté serveur),
+                        // on le charge directement.
+                        if (forceLevel != null && levelsIds.indexOf(forceLevel) !== -1) {
+                            await loadLevel(forceLevel, token);
+                        } else if (levelsIds[levelsIds.length - 1] >= progress.progress + 1) {
                             await loadLevel(progress.progress + 1, token);
-                        else
+                        } else {
                             await loadLevel(levelsIds[levelsIds.length - 1], token);
+                        }
                     } catch (error) {
                         console.error('Error fetching levels:', error);
                         showNotification('Erreur lors du chargement de votre progression : ' + error.message, 'error');
@@ -392,8 +399,13 @@
                     }
                 }
 
+                // Niveau cible si on arrive depuis le SSO Moodle (/maze?level=N).
+                const params = new URLSearchParams(window.location.search);
+                const requestedLevelRaw = params.get('level');
+                const requestedLevel = requestedLevelRaw ? parseInt(requestedLevelRaw, 10) : null;
+
                 await fetchLevels();
-                await fetchPlayerProgress();
+                await fetchPlayerProgress(Number.isInteger(requestedLevel) ? requestedLevel : null);
             });
         </script>
 

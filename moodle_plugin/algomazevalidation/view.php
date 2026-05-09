@@ -1,4 +1,6 @@
 <?php
+// Vue d'une activité Algomaze validation : redirige l'étudiant vers AlgoMaze
+// avec une URL signée HMAC pour l'authentifier automatiquement (SSO).
 
 require_once('../../config.php');
 require_once($CFG->dirroot.'/mod/algomazevalidation/lib.php');
@@ -25,37 +27,40 @@ $PAGE->set_url('/mod/algomazevalidation/view.php', array('id' => $cm->id));
 $PAGE->set_title(format_string($algomazevalidation->name));
 $PAGE->set_heading(format_string($course->fullname));
 
-// Update completion state
+// Met à jour l'état de complétion (vue) - inchangé.
 $completion = new completion_info($course);
 if ($completion->is_enabled($cm)) {
-    $completion->update_state($cm, COMPLETION_COMPLETE);
+    $completion->set_module_viewed($cm);
 }
 
-// Afficher l'entête de la page
-echo $OUTPUT->header();
+// Récupère la configuration SSO du plugin.
+$baseurl = trim((string)get_config('mod_algomazevalidation', 'baseurl'));
+$secret = (string)get_config('mod_algomazevalidation', 'sharedsecret');
 
-// Afficher le nom de l'activité
-//echo $OUTPUT->heading(format_string($algomazevalidation->name), 2);
+// Si la config est incomplète, on affiche un message clair sans redirect.
+if (empty($baseurl) || empty($secret)) {
+    echo $OUTPUT->header();
+    echo $OUTPUT->notification(
+        get_string('ssomisconfigured', 'algomazevalidation'),
+        \core\output\notification::NOTIFY_ERROR
+    );
+    echo $OUTPUT->footer();
+    exit;
+}
 
-// Afficher la description de l'activité, si elle existe
-//if (!empty($algomazevalidation->intro)) {
-//    echo $OUTPUT->box(format_module_intro('algomazevalidation', $algomazevalidation, $cm->id), 'generalbox mod_introbox', 'algomazevalidationintro');
-//}
+// Construit l'URL signée vers AlgoMaze.
+// Payload signé : "username:level:timestamp" (cohérent avec la route /sso/from-moodle côté AlgoMaze).
+$baseurl = rtrim($baseurl, '/');
+$username = strtolower($USER->username);
+$levelnumber = (int)$algomazevalidation->levelnumber;
+$timestamp = time();
+$payload = $username . ':' . $levelnumber . ':' . $timestamp;
+$signature = hash_hmac('sha256', $payload, $secret);
 
-// Afficher les détails spécifiques à l'activité
-//echo html_writer::start_div('algomazevalidation_content');
+$ssourl = $baseurl . '/sso/from-moodle?'
+    . 'username=' . rawurlencode($username)
+    . '&level=' . $levelnumber
+    . '&timestamp=' . $timestamp
+    . '&signature=' . $signature;
 
-// Exemple de section spécifique à l'activité
-//echo html_writer::tag('p', get_string('levelnumber', 'algomazevalidation') . ': ' . $algomazevalidation->levelnumber);
-
-// Ajouter ici d'autres informations spécifiques ou intégrations avec le site externe
-
-//echo html_writer::end_div();
-
-// Ajouter des liens ou des boutons si nécessaire, par exemple pour démarrer l'activité sur le site externe
-//echo $OUTPUT->single_button(new moodle_url('https://algomaze.tspro.fr/maze', 
-//    array('level' => $algomazevalidation->levelnumber)), get_string('startactivity', 'algomazevalidation'));
-
-// Afficher le pied de page de Moodle
-echo $OUTPUT->footer();
-
+redirect(new moodle_url($ssourl));
