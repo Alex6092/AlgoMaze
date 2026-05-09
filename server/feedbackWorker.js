@@ -92,14 +92,19 @@ async function processJob(jobId, io) {
             io.to('user:' + username).emit('feedback:ready', { levelId, result: enriched });
         }
     } catch (err) {
-        console.error(`[feedbackWorker] job ${jobId} échec :`, err.message);
+        // err.cause contient le vrai motif réseau pour les "fetch failed"
+        // (ECONNREFUSED, ETIMEDOUT, ENOTFOUND, …).
+        const causeCode = err.cause && (err.cause.code || err.cause.message);
+        const fullMessage = causeCode ? `${err.message} (cause: ${causeCode})` : err.message;
+        console.error(`[feedbackWorker] job ${jobId} échec :`, fullMessage);
+        if (err.cause) console.error('[feedbackWorker] cause :', err.cause);
         await redisClient.set(statusKey(username, levelId), 'error');
         await redisClient.set(resultKey(username, levelId), JSON.stringify({
-            error: err.message,
+            error: fullMessage,
             evaluatedAt: Date.now()
         }));
         if (io) {
-            io.to('user:' + username).emit('feedback:error', { levelId, error: err.message });
+            io.to('user:' + username).emit('feedback:error', { levelId, error: fullMessage });
         }
     } finally {
         await redisClient.lRem(PROCESSING_KEY, 1, jobId);
