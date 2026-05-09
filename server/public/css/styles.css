@@ -143,6 +143,123 @@ li {
 .command-buttons-img:hover {
     filter: brightness(1.2); /* Slight highlight effect */
 }
+.command-buttons-img.disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+#next-level-button {
+    display: none;
+    margin-top: 10px;
+    padding: 10px 20px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 1em;
+    cursor: pointer;
+}
+#next-level-button:hover {
+    background-color: #45a049;
+}
+#next-level-button.visible {
+    display: inline-block;
+}
+
+/* Feedback IA */
+#feedback-container {
+    display: none;
+    margin-top: 15px;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #f9f9f9;
+}
+#feedback-container.visible {
+    display: block;
+}
+.feedback-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+.feedback-score {
+    font-size: 1.6em;
+    font-weight: bold;
+    color: #333;
+    min-width: 60px;
+}
+.feedback-badge {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    color: white;
+}
+.feedback-badge.ok { background: #4CAF50; }
+.feedback-badge.ko { background: #f44336; }
+.feedback-badge.pending { background: #888; }
+.feedback-text {
+    margin: 8px 0;
+    font-style: italic;
+    color: #444;
+}
+.feedback-criteria {
+    margin-top: 8px;
+}
+.feedback-criteria summary {
+    cursor: pointer;
+    color: #555;
+    user-select: none;
+}
+.feedback-criterion {
+    padding: 6px 10px;
+    margin: 4px 0;
+    border-left: 3px solid #ccc;
+    background: #fff;
+}
+.feedback-criterion.met { border-left-color: #4CAF50; }
+.feedback-criterion.unmet { border-left-color: #f44336; }
+.feedback-criterion-name {
+    font-weight: bold;
+}
+.feedback-error {
+    color: #b00;
+}
+
+/* Badges (gaming-style) */
+.badge {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 0.9em;
+    color: #fff;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+    border: 2px solid rgba(0,0,0,0.15);
+}
+.badge.Fer      { background: #6b6b6b; }
+.badge.Bronze   { background: #cd7f32; }
+.badge.Argent   { background: #a8a8a8; color: #222; text-shadow: none; }
+.badge.Or       { background: #d4af37; color: #3a2a00; text-shadow: none; }
+.badge.Platine  { background: #2bbbad; }
+
+/* Rang global affiché dans le header */
+.player-rank {
+    display: inline-block;
+    margin-left: 20px;
+    font-size: 0.6em;
+    background: rgba(0,0,0,0.15);
+    color: #222;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-weight: normal;
+    vertical-align: middle;
+}
+.player-rank b {
+    color: #000;
+}
 
 
 /* Notification */
