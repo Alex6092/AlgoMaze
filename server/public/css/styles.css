@@ -445,6 +445,12 @@ table.data-table tbody tr:hover { background: var(--surface-hover); }
     color: var(--text-muted);
     margin: 0 0 12px;
 }
+.game-main-column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
 .game-canvas-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -456,6 +462,7 @@ table.data-table tbody tr:hover { background: var(--surface-hover); }
     display: flex;
     flex-direction: column;
     gap: 16px;
+    min-width: 0;
 }
 
 canvas#maze {
