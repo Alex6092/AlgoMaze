@@ -1,205 +1,164 @@
 <!doctype html>
-<html>
-    <head>
-        <title>Algomaze - Avancement utilisateurs</title>
-        <meta charset="utf-8">
-        <link rel="stylesheet" href="/css/styles.css" type="text/css">
+<html lang="fr">
+<head>
+    <title>Avancement — AlgoMaze</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/assets/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script src="/js/auth.js"></script>
+    <script src="/js/app-shell.js"></script>
+</head>
 
-        <!-- CodeMirror CSS -->
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+<body>
 
-        <!-- CodeMirror JS -->
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
-        <script src="/js/auth.js"></script>
+    <main class="app-main">
+        <h1 class="page-title">Avancement des utilisateurs</h1>
+        <p class="page-subtitle">Suivi de la progression et gestion des comptes étudiants.</p>
 
-        <style>
-            
-        </style>
-    </head>
+        <div class="card" style="margin-bottom: 16px;">
+            <div id="userdatacontainer"></div>
+        </div>
+    </main>
 
-    <body>
+    <div id="notification-container"></div>
 
-        <header class="main-header">
-            <h1>Bilan d'avancement des utilisateurs</h1>
-        </header>
+    <script>
+        function showNotification(message, type) {
+            const container = document.getElementById('notification-container');
+            const n = document.createElement('div');
+            n.className = 'notification ' + type;
+            n.innerText = message;
+            container.appendChild(n);
+            setTimeout(() => n.remove(), 3000);
+        }
 
-        <div class="main-wrapper">
-            <div class="left-container">
-                <p style="margin: 10px 0;"><a href="/solutions">Voir les solutions des étudiants →</a></p>
-                Avancement des utilisateurs :
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
 
-                <div id="userdatacontainer"></div>
-            </div>
-
-            <div id="notification-container"></div>
-            
-        </div><!-- main wrapper -->
-
-       
-        <script>
-            let editor;
-
-            function showNotification(message, type) {
-                const notificationContainer = document.getElementById('notification-container');
-                const notification = document.createElement('div');
-                notification.className = `notification ${type}`;
-                notification.innerText = message;
-                notificationContainer.appendChild(notification);
-
-                setTimeout(() => {
-                    notification.remove();
-                }, 2000);
+        async function updateUserPassword(username) {
+            const token = localStorage.getItem('token');
+            const password = document.getElementById('newPassword_' + username).value;
+            if (!password) {
+                showNotification('Saisis un nouveau mot de passe avant de valider.', 'error');
+                return;
             }
-
-            async function updateUserPassword(username) {
-                const token = localStorage.getItem('token');
-                try {
-                    let fetchAddress = '/user/updatepassword';
-                    var password = document.getElementById('newPassword_' + username).value;
-
-                    let response = await fetch(fetchAddress, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + token
-                        },
-                        body: JSON.stringify({username: username, password: password}),
-                        credentials: 'include'
-                    });
-                    let result = await response.json();
-                    if(response.ok)
-                    {
-                        showNotification("Mot de passe utilisateur modifié : " + result.user, 'success');
-                        await fetchUsersProgress();
-                    }
-                    else
-                    {
-                        showNotification("Erreur lors de la modification du mot de passe utilisateur : " + result.error, 'error');
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                    showNotification("Erreur lors de la modification du mot de passe utilisateur : " + error.message, 'error');
-                }
-            }
-
-            async function deleteUser(username) {
-                const check = confirm("Etes vous sûr de vouloir supprimer l'utilisateur " + username + " ?");
-                
-                if(check)
-                {
-                    const token = localStorage.getItem('token');
-                    try {
-                        let fetchAddress = '/user/delete';
-
-                        let response = await fetch(fetchAddress, {
-                            method: 'DELETE',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': 'Bearer ' + token
-                            },
-                            body: JSON.stringify({username: username}),
-                            credentials: 'include'
-                        });
-                        let result = await response.json();
-                        if(response.ok)
-                        {
-                            showNotification("Utilisateur supprimé : " + result.user, 'success');
-                            await fetchUsersProgress();
-                        }
-                        else
-                        {
-                            showNotification("Erreur lors de la suppression de l'utilisateur : " + result.error, 'error');
-                        }
-                    } catch (error) {
-                        console.error('Error:', error);
-                        showNotification("Erreur lors de la suppression de l'utilisateur : " + error.message, 'error');
-                    }
-                }
-            }
-
-            var _usersProgress = [];
-            async function fetchUsersProgress() {
-                const token = localStorage.getItem('token');
-                try {
-                    let response = await fetch('/userprogressreport', {
-                        headers: {
-                            'Authorization': 'Bearer ' + token
-                        },
-                        credentials: 'include'
-                    });
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    _usersProgress = await response.json();
-                    displayUsersProgress(_usersProgress);
-                } catch (error) {
-                    console.error('Error fetching levels:', error);
-                    showNotification('Erreur lors du chargement des données d\'avancement des utilisateurs : ' + error.message, 'error');
-                }
-            }
-
-            function createTableLine(username, lastCompletedLevel, isHeader)
-            {
-                const tr = document.createElement('tr');
-                const td1 = document.createElement('td');
-                td1.textContent = username;
-                tr.appendChild(td1);
-
-                const td2 = document.createElement('td');
-                td2.textContent = lastCompletedLevel;
-                tr.appendChild(td2);
-
-                const td4 = document.createElement('td');
-                if(isHeader)
-                    td4.textContent = "Nouveau mot de passe";
-                else
-                {
-                    td4.innerHTML = '<input type="password" id="newPassword_'+ username + '"/>';
-                }
-                tr.appendChild(td4);
-
-                const td5 = document.createElement('td');
-                if(isHeader)
-                    td5.textContent = "Modifier le mot de passe";
-                else
-                {
-                    td5.innerHTML = '<a href="javascript:updateUserPassword(\'' + username + '\')">Modifier</a>';
-                }
-                tr.appendChild(td5);
-
-
-                const td3 = document.createElement('td');
-                if(isHeader)
-                    td3.textContent = "Supprimer l'utilisateur";
-                else
-                {
-                    td3.innerHTML = '<a href="javascript:deleteUser(\'' + username + '\')">Supprimer</a>';
-                }
-                tr.appendChild(td3);
-
-                return tr;
-            }
-
-            function displayUsersProgress(usersProgress) {
-                console.log(usersProgress);
-
-                const userData = document.getElementById('userdatacontainer');
-                userData.innerHTML = '';
-                const table = document.createElement('table');
-                table.appendChild(createTableLine("Nom d'utilisateur", "Dernier niveau complété", true));
-
-                usersProgress.forEach(user => {
-                    table.appendChild(createTableLine(user.username, user.lastCompletedLevel, false));
+            try {
+                let response = await fetch('/user/updatepassword', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ username, password }),
+                    credentials: 'include'
                 });
-            
-                userData.appendChild(table);
+                let result = await response.json();
+                if (response.ok) {
+                    showNotification('Mot de passe modifié pour ' + result.user, 'success');
+                    document.getElementById('newPassword_' + username).value = '';
+                } else {
+                    showNotification('Erreur : ' + (result.error || 'inconnue'), 'error');
+                }
+            } catch (error) {
+                showNotification('Erreur réseau : ' + error.message, 'error');
+            }
+        }
+
+        async function deleteUser(username) {
+            if (!confirm("Supprimer définitivement l'utilisateur " + username + ' ?')) return;
+            const token = localStorage.getItem('token');
+            try {
+                let response = await fetch('/user/delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ username }),
+                    credentials: 'include'
+                });
+                let result = await response.json();
+                if (response.ok) {
+                    showNotification('Utilisateur supprimé : ' + result.user, 'success');
+                    await fetchUsersProgress();
+                } else {
+                    showNotification('Erreur : ' + (result.error || 'inconnue'), 'error');
+                }
+            } catch (error) {
+                showNotification('Erreur réseau : ' + error.message, 'error');
+            }
+        }
+
+        async function fetchUsersProgress() {
+            const token = localStorage.getItem('token');
+            try {
+                let response = await fetch('/userprogressreport', {
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    credentials: 'include'
+                });
+                if (!response.ok) throw new Error('Network response was not ok');
+                const usersProgress = await response.json();
+                displayUsersProgress(usersProgress);
+            } catch (error) {
+                showNotification('Erreur lors du chargement : ' + error.message, 'error');
+            }
+        }
+
+        function displayUsersProgress(usersProgress) {
+            const container = document.getElementById('userdatacontainer');
+            container.innerHTML = '';
+
+            if (!usersProgress.length) {
+                container.innerHTML = '<div class="empty-state">Aucun utilisateur enregistré pour le moment.</div>';
+                return;
             }
 
-            document.addEventListener("DOMContentLoaded", async function() {
-                await fetchUsersProgress();
-            });
-        </script>
+            const wrapper = document.createElement('div');
+            wrapper.className = 'table-wrapper';
 
-    </body>
+            const table = document.createElement('table');
+            table.className = 'data-table';
+
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Utilisateur</th>
+                        <th>Dernier niveau complété</th>
+                        <th>Nouveau mot de passe</th>
+                        <th style="text-align:right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+
+            const tbody = table.querySelector('tbody');
+            usersProgress.forEach(user => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><b>${escapeHtml(user.username)}</b></td>
+                    <td><span class="player-rank" style="display:inline-flex;">Niveau <b>${escapeHtml(user.lastCompletedLevel)}</b></span></td>
+                    <td><input type="password" id="newPassword_${escapeHtml(user.username)}" placeholder="Nouveau mot de passe" autocomplete="new-password"></td>
+                    <td style="text-align:right;">
+                        <button class="btn btn-secondary btn-sm" onclick="updateUserPassword('${escapeHtml(user.username)}')">Modifier</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteUser('${escapeHtml(user.username)}')">Supprimer</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            wrapper.appendChild(table);
+            container.appendChild(wrapper);
+        }
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            await fetchUsersProgress();
+        });
+    </script>
+
+</body>
 </html>

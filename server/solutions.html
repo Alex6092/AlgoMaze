@@ -1,202 +1,61 @@
 <!doctype html>
-<html>
+<html lang="fr">
 <head>
-    <title>Algomaze - Solutions des étudiants</title>
+    <title>Solutions — AlgoMaze</title>
     <meta charset="utf-8">
-    <link rel="stylesheet" href="/css/styles.css" type="text/css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/assets/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
     <script src="/js/auth.js"></script>
-    <style>
-        .solutions-controls {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            align-items: center;
-            margin-bottom: 20px;
-            padding: 15px;
-            background: #f5f5f5;
-            border-radius: 5px;
-        }
-        .solutions-controls label {
-            font-weight: bold;
-        }
-        .solutions-controls select {
-            padding: 5px 10px;
-            font-size: 1em;
-        }
-        .solutions-controls button {
-            padding: 8px 16px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        .solutions-controls button:hover {
-            background: #45a049;
-        }
-        .solution-entry {
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            margin-bottom: 15px;
-            padding: 12px;
-            background: #fafafa;
-        }
-        .solution-entry h3 {
-            margin: 0 0 8px 0;
-            font-size: 1.1em;
-        }
-        .solution-entry pre {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 10px;
-            border-radius: 4px;
-            overflow-x: auto;
-            font-family: 'Source Code Pro', 'Courier', monospace;
-            font-size: 0.9em;
-            white-space: pre-wrap;
-            margin: 8px 0;
-        }
-        .solution-entry details {
-            margin-top: 8px;
-        }
-        .solution-entry details summary {
-            cursor: pointer;
-            color: #555;
-            user-select: none;
-        }
-        .history-entry {
-            border-left: 3px solid #ccc;
-            padding: 6px 12px;
-            margin: 6px 0 6px 8px;
-            background: #fff;
-        }
-        .history-entry.valid {
-            border-left-color: #4CAF50;
-        }
-        .history-entry.invalid {
-            border-left-color: #f44336;
-        }
-        .history-meta {
-            font-size: 0.85em;
-            color: #666;
-            margin-bottom: 4px;
-        }
-        .empty-state {
-            color: #888;
-            font-style: italic;
-            padding: 20px;
-            text-align: center;
-        }
-        .feedback-block {
-            margin-top: 8px;
-            padding: 8px 12px;
-            background: #fff;
-            border-left: 4px solid #2196F3;
-            border-radius: 3px;
-        }
-        .feedback-block.error { border-left-color: #f44336; }
-        .feedback-block.pending { border-left-color: #ff9800; }
-        .fb-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 5px;
-        }
-        .fb-score { font-weight: bold; font-size: 1.1em; }
-        .fb-badge {
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.8em;
-            color: white;
-        }
-        .fb-badge.ok { background: #4CAF50; }
-        .fb-badge.ko { background: #f44336; }
-        .fb-badge.pending { background: #888; }
-        .fb-text { font-style: italic; color: #444; margin: 4px 0; }
-        .fb-criterion {
-            padding: 4px 8px;
-            margin: 3px 0;
-            border-left: 3px solid #ccc;
-            background: #fafafa;
-            font-size: 0.9em;
-        }
-        .fb-criterion.met { border-left-color: #4CAF50; }
-        .fb-criterion.unmet { border-left-color: #f44336; }
-
-        /* Badges (gaming-style) — copie du style de l'app */
-        .badge {
-            display: inline-block;
-            padding: 3px 12px;
-            border-radius: 12px;
-            font-weight: bold;
-            font-size: 0.9em;
-            color: #fff;
-            text-shadow: 0 1px 1px rgba(0,0,0,0.3);
-            border: 2px solid rgba(0,0,0,0.15);
-        }
-        .badge.Fer      { background: #6b6b6b; }
-        .badge.Bronze   { background: #cd7f32; }
-        .badge.Argent   { background: #a8a8a8; color: #222; text-shadow: none; }
-        .badge.Or       { background: #d4af37; color: #3a2a00; text-shadow: none; }
-        .badge.Platine  { background: #2bbbad; }
-        .top-nav {
-            margin-bottom: 15px;
-        }
-        .top-nav a {
-            margin-right: 15px;
-        }
-    </style>
+    <script src="/js/app-shell.js"></script>
 </head>
 
 <body>
-    <header class="main-header">
-        <h1>Solutions des étudiants</h1>
-    </header>
 
-    <div class="main-wrapper">
-        <div class="left-container" style="flex: 1; padding: 20px;">
-            <div class="top-nav">
-                <a href="/progress">← Avancement utilisateurs</a>
-                <a href="/maze">← Retour au jeu</a>
-            </div>
+    <main class="app-main">
+        <h1 class="page-title">Solutions des étudiants</h1>
+        <p class="page-subtitle">Consulte le code soumis et l'évaluation IA, par étudiant ou par niveau.</p>
 
-            <div class="solutions-controls">
-                <label>Mode :</label>
+        <div class="solutions-controls">
+            <div class="control-group">
+                <span class="label">Mode :</span>
                 <label><input type="radio" name="mode" value="user" checked> Par utilisateur</label>
                 <label><input type="radio" name="mode" value="level"> Par niveau</label>
-
-                <label for="target-select">Cible :</label>
-                <select id="target-select"></select>
-
-                <button id="load-button">Charger</button>
             </div>
 
-            <div id="results-container"></div>
+            <div class="control-group" style="flex: 1; min-width: 240px;">
+                <label class="label" for="target-select">Cible</label>
+                <select id="target-select"></select>
+            </div>
+
+            <button class="btn btn-primary" id="load-button">Charger</button>
         </div>
 
-        <div id="notification-container"></div>
-    </div>
+        <div id="results-container"></div>
+    </main>
+
+    <div id="notification-container"></div>
 
     <script>
         function showNotification(message, type) {
             const container = document.getElementById('notification-container');
-            const notification = document.createElement('div');
-            notification.className = `notification ${type}`;
-            notification.innerText = message;
-            container.appendChild(notification);
-            setTimeout(() => { notification.remove(); }, 2500);
+            const n = document.createElement('div');
+            n.className = 'notification ' + type;
+            n.innerText = message;
+            container.appendChild(n);
+            setTimeout(() => n.remove(), 3000);
         }
 
         function escapeHtml(s) {
-            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
         function formatDate(ts) {
-            try {
-                return new Date(ts).toLocaleString('fr-FR');
-            } catch (e) {
-                return String(ts);
-            }
+            try { return new Date(ts).toLocaleString('fr-FR'); }
+            catch (e) { return String(ts); }
         }
 
         async function fetchUsers() {
@@ -254,7 +113,6 @@
                 const msg = (result && result.error) || 'Erreur inconnue';
                 return '<div class="feedback-block error"><b>Évaluation IA en échec :</b> ' + escapeHtml(msg) + '</div>';
             }
-            // done
             const score = (result && typeof result.score === 'number') ? result.score : '?';
             const respected = result && result.constraintsRespected;
             const txt = (result && result.feedback) || '';
@@ -285,7 +143,7 @@
 
         function renderHistory(history) {
             if (!history || !history.length) {
-                return '<p class="empty-state">Aucun historique</p>';
+                return '<p class="muted" style="margin:6px 0;">Aucun historique</p>';
             }
             return history.map(h => `
                 <div class="history-entry ${h.valid ? 'valid' : 'invalid'}">
@@ -301,7 +159,7 @@
 
         function renderUserSolutions(data) {
             if (!data.length) {
-                return '<p class="empty-state">Aucune solution enregistrée pour cet utilisateur.</p>';
+                return '<div class="empty-state">Aucune solution enregistrée pour cet utilisateur.</div>';
             }
             return data.map(entry => `
                 <div class="solution-entry">
@@ -318,7 +176,7 @@
 
         function renderLevelSolutions(data) {
             if (!data.length) {
-                return '<p class="empty-state">Aucune solution enregistrée pour ce niveau.</p>';
+                return '<div class="empty-state">Aucune solution enregistrée pour ce niveau.</div>';
             }
             return data.map(entry => `
                 <div class="solution-entry">
@@ -340,11 +198,11 @@
             const container = document.getElementById('results-container');
 
             if (!target) {
-                showNotification('Sélectionnez une cible', 'error');
+                showNotification('Sélectionne une cible', 'error');
                 return;
             }
 
-            container.innerHTML = '<p class="empty-state">Chargement...</p>';
+            container.innerHTML = '<div class="empty-state">Chargement…</div>';
             try {
                 const url = mode === 'user'
                     ? `/admin/solutions/user/${encodeURIComponent(target)}`
@@ -367,7 +225,6 @@
                 radio.addEventListener('change', () => populateTargetSelect(radio.value));
             });
             document.getElementById('load-button').addEventListener('click', loadSolutions);
-
             await populateTargetSelect('user');
         });
     </script>
