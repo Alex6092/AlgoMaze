@@ -2,9 +2,11 @@ import 'dotenv/config';
 import { createClient } from 'redis';
 import vm from 'node:vm';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import bcrypt from 'bcrypt';
 import { Server as SocketIOServer } from 'socket.io';
 import { Direction, SwitchState } from './shared.js';
 import userRouter from './routes/user.js';
@@ -44,7 +46,7 @@ app.use('/user', userRouter);
 // Middleware pour vérifier l'authentification (cookie pour les pages HTML)
 app.use((req, res, next) => {
     const token = req.cookies.token;
-    const publicPaths = ['/login', '/register', '/user/login', '/', '/user/register', '/check_completion']; // Ajoutez ici les routes publiques
+    const publicPaths = ['/login', '/register', '/user/login', '/', '/user/register', '/check_completion', '/sso/from-moodle']; // Ajoutez ici les routes publiques
 
     if (publicPaths.includes(req.path)) {
         return next();
@@ -93,6 +95,85 @@ app.get('/', (req, res) => {
 
 app.get('/register', (req, res) => {
     res.sendFile(__dirname + '/register.html');
+});
+
+// SSO depuis Moodle.
+// Le plugin Moodle (mod_algomazevalidation) redirige l'étudiant ici avec
+// son username Moodle, le numéro de niveau de l'activité et une signature HMAC
+// du payload "username:level:timestamp" pour éviter qu'un tiers fabrique une URL.
+// Si le compte AlgoMaze n'existe pas, on l'auto-provisionne.
+// Si un compte avec le même username existe déjà (créé manuellement), on le lie
+// transparenment au SSO en marquant moodleManaged=true.
+app.get('/sso/from-moodle', async (req, res) => {
+    try {
+        const { username, level, timestamp, signature } = req.query;
+        const secret = process.env.MOODLE_SHARED_SECRET;
+
+        if (!secret) {
+            console.error('[SSO] MOODLE_SHARED_SECRET non configuré');
+            return res.status(500).send('SSO non configuré côté serveur AlgoMaze.');
+        }
+        if (!username || !timestamp || !signature) {
+            return res.status(400).send('Paramètres SSO manquants.');
+        }
+
+        // Anti-replay : on accepte une fenêtre de 60 secondes.
+        const now = Math.floor(Date.now() / 1000);
+        const ts = parseInt(timestamp, 10);
+        if (isNaN(ts) || Math.abs(now - ts) > 60) {
+            return res.status(403).send('Lien SSO expiré. Reviens sur Moodle et rouvre l\'activité.');
+        }
+
+        // Vérification de signature en temps constant.
+        const lvl = parseInt(level, 10) || 0;
+        const uname = String(username).toLowerCase();
+        const payload = uname + ':' + lvl + ':' + ts;
+        const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+
+        let sigBuf, expBuf;
+        try {
+            sigBuf = Buffer.from(String(signature), 'hex');
+            expBuf = Buffer.from(expected, 'hex');
+        } catch (e) {
+            return res.status(403).send('Signature SSO invalide.');
+        }
+        if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+            return res.status(403).send('Signature SSO invalide.');
+        }
+
+        // Auto-provisioning : crée le compte si nécessaire, sinon lie l'existant.
+        const userKey = 'user:' + uname;
+        const existingRaw = await redisClient.get(userKey);
+        if (existingRaw) {
+            const user = JSON.parse(existingRaw);
+            if (!user.moodleManaged) {
+                user.moodleManaged = true;
+                await redisClient.set(userKey, JSON.stringify(user));
+            }
+        } else {
+            // Mot de passe random non-utilisable (l'étudiant se connecte uniquement via SSO).
+            // Un admin peut le réinitialiser via la page /progress si besoin.
+            const randomPassword = crypto.randomBytes(24).toString('hex');
+            const hashedPassword = await bcrypt.hash(randomPassword, 10);
+            const newUser = {
+                username: uname,
+                password: hashedPassword,
+                lastCompletedLevel: 0,
+                isAdmin: false,
+                moodleManaged: true
+            };
+            await redisClient.set(userKey, JSON.stringify(newUser));
+        }
+
+        // Pose le cookie JWT (même format que /user/login) et redirige vers le jeu.
+        const token = generateToken(uname);
+        res.cookie('token', token, { httpOnly: false, secure: false });
+        const target = lvl > 0 ? '/maze?level=' + lvl : '/maze';
+        return res.redirect(target);
+    } catch (error) {
+        console.log('[ERROR] /sso/from-moodle ' + error);
+        res.status(500).send('Erreur SSO.');
+    }
 });
 
 // Routes protégées :

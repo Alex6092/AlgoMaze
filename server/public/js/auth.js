@@ -1,3 +1,17 @@
+// Synchronise localStorage.token depuis le cookie token si manquant.
+// Utile après un redirect SSO (Moodle) où seul le cookie est posé côté serveur :
+// les requêtes Bearer côté front ont besoin du token dans localStorage.
+(function syncTokenFromCookie() {
+    try {
+        if (!localStorage.getItem('token')) {
+            const m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+            if (m && m[1]) {
+                localStorage.setItem('token', decodeURIComponent(m[1]));
+            }
+        }
+    } catch (e) { /* localStorage indisponible : on ignore */ }
+})();
+
 // Sliding token interceptor.
 // Si le serveur renvoie un header X-Refreshed-Token (sliding session),
 // on met à jour le token stocké côté client (localStorage + cookie).
