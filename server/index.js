@@ -55,12 +55,21 @@ app.use((req, res, next) => {
             const decoded = verifyToken(token);
             req.user = decoded;
 
+
             // Sliding refresh sur le cookie : on renouvelle si plus de la moitié du TTL est écoulée.
             const refreshResult = slidingRefresh(token);
             if (refreshResult.refreshed) {
                 res.cookie('token', refreshResult.token, { httpOnly: false, secure: false });
                 res.setHeader('X-Refreshed-Token', refreshResult.token);
             }
+
+            // Disable result caching:
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+            res.setHeader('Surrogate-Control', 'no-store'); // pour certains CDN
+            //console.log('Token valid, user authenticated');
+
             return next();
         } catch (err) {
             res.clearCookie('token');
