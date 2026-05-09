@@ -34,8 +34,15 @@
                     <ul class="level-list" id="level-list"></ul>
                 </aside>
 
-                <section class="game-canvas-card">
-                    <canvas id="maze" width="768" height="768"></canvas>
+                <section class="game-main-column">
+                    <div class="game-canvas-card">
+                        <canvas id="maze" width="768" height="768"></canvas>
+                    </div>
+
+                    <div id="feedback-container">
+                        <h3>Feedback IA</h3>
+                        <div id="feedback-content"></div>
+                    </div>
                 </section>
 
                 <section class="game-side">
@@ -67,11 +74,6 @@
                                 <button type="button" onclick="insertCommand('collectGem();')">collectGem()</button>
                             </div>
                         </div>
-                    </div>
-
-                    <div id="feedback-container">
-                        <h3>Feedback IA</h3>
-                        <div id="feedback-content"></div>
                     </div>
                 </section>
             </div>
