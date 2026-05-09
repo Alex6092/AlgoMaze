@@ -8,9 +8,12 @@
         <!-- CodeMirror CSS -->
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
 
+        <script src="/js/auth.js"></script>
         <script src="/js/shared.js"></script>
         <script src="/js/common.js"></script>
         <script src="/js/algomaze.js"></script>
+        <!-- Socket.io client -->
+        <script src="/socket.io/socket.io.js"></script>
         <!-- CodeMirror JS -->
         <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
@@ -23,7 +26,7 @@
     <body>
 
         <header class="main-header">
-            <h1>Bienvenue dans Algomaze</h1>
+            <h1>Bienvenue dans Algomaze<span id="player-rank" class="player-rank" style="display:none;"></span></h1>
         </header>
 
         <div class="main-wrapper">
@@ -45,6 +48,12 @@
                     <textarea id="code-editor">// Votre solution ici ...</textarea>
                     <img class="command-buttons-img" id="run-button" src="/assets/run.png" alt="Exécuter la solution" title="Exécuter la solution">
                     <img class="command-buttons-img" id="submit-button" src="/assets/verify.png" alt="Vérifier la solution" title="Vérifier la solution">
+                    <button id="next-level-button" type="button">Niveau suivant ➡</button>
+
+                    <div id="feedback-container">
+                        <h3 style="margin-top:0;">Feedback IA</h3>
+                        <div id="feedback-content"></div>
+                    </div>
                     <div class="command-buttons">
                         <h2>Saisie rapide : </h2>
                         <button onclick="insertCommand('moveForward();')">moveForward()</button>
@@ -98,6 +107,106 @@
             }
 
             var currentLevelId = 1;
+            var playerLastCompletedLevel = 0;
+
+            // Anti-spam : verrouille les boutons run+submit pendant une requête en cours.
+            function setActionButtonsDisabled(disabled) {
+                ['run-button', 'submit-button'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.classList.toggle('disabled', disabled);
+                });
+            }
+
+            function escapeHtml(s) {
+                return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+
+            // Affiche un feedback IA pour le niveau courant.
+            // status : 'pending' | 'done' | 'error' | null
+            // result : objet IA ({ score, constraintsRespected, feedback, criteria }) ou { error }
+            function displayFeedback(status, result) {
+                const container = document.getElementById('feedback-container');
+                const content = document.getElementById('feedback-content');
+                if (!status) {
+                    container.classList.remove('visible');
+                    content.innerHTML = '';
+                    return;
+                }
+                container.classList.add('visible');
+
+                if (status === 'pending') {
+                    content.innerHTML = '<div class="feedback-header"><span class="feedback-badge pending">Évaluation IA en cours…</span></div>';
+                    return;
+                }
+                if (status === 'error') {
+                    const msg = (result && result.error) || 'Erreur inconnue';
+                    content.innerHTML = '<div class="feedback-error">L\'évaluation IA a échoué : ' + escapeHtml(msg) + '</div>';
+                    return;
+                }
+                // done
+                const score = (result && typeof result.score === 'number') ? result.score : '?';
+                const respected = result && result.constraintsRespected;
+                const feedbackText = (result && result.feedback) || '';
+                const criteria = (result && Array.isArray(result.criteria)) ? result.criteria : [];
+
+                const badgeName = result && result.badge;
+                let html = '<div class="feedback-header">';
+                html += '<span class="feedback-score">' + escapeHtml(score) + '/100</span>';
+                if (badgeName) {
+                    html += '<span class="badge ' + escapeHtml(badgeName) + '">' + escapeHtml(badgeName) + '</span>';
+                }
+                html += '<span class="feedback-badge ' + (respected ? 'ok' : 'ko') + '">'
+                     + (respected ? 'Contraintes respectées' : 'Contraintes non respectées') + '</span>';
+                html += '</div>';
+                html += '<div class="feedback-text">' + escapeHtml(feedbackText) + '</div>';
+                if (criteria.length) {
+                    html += '<details class="feedback-criteria"><summary>Détail des critères (' + criteria.length + ')</summary>';
+                    criteria.forEach(c => {
+                        html += '<div class="feedback-criterion ' + (c.met ? 'met' : 'unmet') + '">';
+                        html += '<div class="feedback-criterion-name">' + (c.met ? '✓ ' : '✗ ') + escapeHtml(c.name) + '</div>';
+                        html += '<div>' + escapeHtml(c.comment) + '</div>';
+                        html += '</div>';
+                    });
+                    html += '</details>';
+                }
+                content.innerHTML = html;
+            }
+
+            async function fetchFeedback(levelId) {
+                const token = localStorage.getItem('token');
+                try {
+                    const response = await fetch('/feedback/' + levelId, {
+                        headers: { 'Authorization': 'Bearer ' + token },
+                        credentials: 'include'
+                    });
+                    if (!response.ok) return null;
+                    return await response.json();
+                } catch (err) {
+                    return null;
+                }
+            }
+
+            async function fetchAndDisplayRank() {
+                const token = localStorage.getItem('token');
+                try {
+                    const response = await fetch('/user/rank', {
+                        headers: { 'Authorization': 'Bearer ' + token },
+                        credentials: 'include'
+                    });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const el = document.getElementById('player-rank');
+                    if (data.sample > 0) {
+                        el.innerHTML = 'Rang : <b>' + escapeHtml(data.rank) + '</b> (médiane ' + data.median + ' XP sur ' + data.sample + ' niveau' + (data.sample > 1 ? 'x' : '') + ')';
+                        el.style.display = 'inline-block';
+                    } else {
+                        el.style.display = 'none';
+                    }
+                } catch (err) {
+                    // Silencieux : l'absence de rang n'est pas bloquante.
+                }
+            }
+
             document.addEventListener("DOMContentLoaded", async function() {
                 const token = localStorage.getItem('token');
                 editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
@@ -106,23 +215,87 @@
                     theme: "default"
                 });
 
-                
+                // Connexion socket.io pour recevoir les feedbacks IA en push.
+                const socket = io({ auth: { token } });
+                socket.on('feedback:ready', (payload) => {
+                    if (payload.levelId === currentLevelId) {
+                        displayFeedback('done', payload.result);
+                    } else {
+                        showNotification('Feedback IA prêt pour le niveau ' + payload.levelId, 'success');
+                    }
+                    // Mise à jour du rang global (un nouveau badge a été acquis).
+                    fetchAndDisplayRank();
+                });
+                socket.on('feedback:error', (payload) => {
+                    if (payload.levelId === currentLevelId) {
+                        displayFeedback('error', { error: payload.error });
+                    } else {
+                        showNotification('Évaluation IA en échec pour le niveau ' + payload.levelId, 'error');
+                    }
+                });
 
-                document.getElementById("run-button").addEventListener("click", function() {
+                function updateNextLevelButton() {
+                    const btn = document.getElementById('next-level-button');
+                    const completed = currentLevelId <= playerLastCompletedLevel;
+                    const hasNext = levelsIds.indexOf(currentLevelId + 1) !== -1;
+                    btn.classList.toggle('visible', completed && hasNext);
+                }
+
+                document.getElementById('next-level-button').addEventListener('click', async function() {
+                    if (!this.classList.contains('visible')) return;
+                    await loadLevel(currentLevelId + 1, token);
+                });
+
+                document.getElementById("run-button").addEventListener("click", async function() {
+                    if (this.classList.contains('disabled')) return;
                     var code = editor.getValue();
+                    var levelId = currentLevelId;
+
+                    setActionButtonsDisabled(true);
                     try {
-                        solve(code);
-                    } catch (e) {
-                        console.error(e);
-                        showNotification('Erreur lors de l\'exécution du script : ' + e.message, 'error');
+                        // Pré-check serveur avant exécution locale :
+                        // sauvegarde la version courante du code et détecte les boucles infinies
+                        // pour éviter de freezer le navigateur de l'étudiant.
+                        try {
+                            let response = await fetch('/precheck', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': 'Bearer ' + token
+                                },
+                                body: JSON.stringify({ levelId, code }),
+                                credentials: 'include'
+                            });
+                            let outcome = await response.json();
+
+                            if (outcome.timeout) {
+                                showNotification('Exécution bloquée : ' + outcome.error + ' Corrigez vos boucles avant de relancer.', 'error');
+                                return;
+                            }
+                        } catch (err) {
+                            console.error('Pré-check serveur indisponible :', err);
+                            showNotification('Pré-check serveur indisponible — exécution locale uniquement (à vos risques).', 'error');
+                            // On continue malgré tout pour ne pas bloquer l'étudiant si le serveur est down.
+                        }
+
+                        try {
+                            solve(code);
+                        } catch (e) {
+                            console.error(e);
+                            showNotification('Erreur lors de l\'exécution du script : ' + e.message, 'error');
+                        }
+                    } finally {
+                        setActionButtonsDisabled(false);
                     }
                 });
 
 
                 document.getElementById("submit-button").addEventListener("click", async function() {
+                    if (this.classList.contains('disabled')) return;
                     var code = editor.getValue();
-                    var levelId = currentLevelId; 
+                    var levelId = currentLevelId;
 
+                    setActionButtonsDisabled(true);
                     try {
                         let response = await fetch('/checkanswer', {
                             method: 'POST',
@@ -135,12 +308,20 @@
                         });
 
                         let result = await response.json();
-                        
+
                         if(result == true)
                         {
-                            showNotification('Bravo, la solution est valide !', 'success');
+                            showNotification('Bravo, la solution est valide ! Évaluation IA en cours…', 'success');
+                            // Met à jour la progression locale et la liste des niveaux,
+                            // puis affiche le bouton "Niveau suivant" — sans charger automatiquement.
+                            if (levelId > playerLastCompletedLevel) {
+                                playerLastCompletedLevel = levelId;
+                            }
                             await fetchLevels();
-                            await fetchPlayerProgress();
+                            updateNextLevelButton();
+                            // Affiche immédiatement l'état "pending" du feedback IA.
+                            // Le résultat arrivera via WebSocket (event 'feedback:ready').
+                            displayFeedback('pending', null);
                         }
                         else
                         {
@@ -149,6 +330,8 @@
                     } catch (error) {
                         console.error('Error:', error);
                         showNotification('Erreur lors de la soumission du code : ' + error.message, 'error');
+                    } finally {
+                        setActionButtonsDisabled(false);
                     }
                 });
 
@@ -199,6 +382,7 @@
                             throw new Error('Network response was not ok');
                         }
                         let progress = await response.json();
+                        playerLastCompletedLevel = progress.progress;
                         if(levelsIds[levelsIds.length - 1] >= progress.progress + 1)
                             await loadLevel(progress.progress + 1, token);
                         else
@@ -207,8 +391,6 @@
                         console.error('Error fetching levels:', error);
                         showNotification('Erreur lors du chargement de votre progression : ' + error.message, 'error');
                     }
-
-                    //loadLevel(1, token);
                 }
 
                 async function loadPlayerSentence(levelId, token)
@@ -233,6 +415,9 @@
 
                 // Load level from API :
                 async function loadLevel(levelId, token) {
+                    // Masque le bouton "Niveau suivant" et le feedback tant qu'on n'a pas évalué le nouveau niveau.
+                    document.getElementById('next-level-button').classList.remove('visible');
+                    displayFeedback(null, null);
                     try {
                         let response = await fetch(`/level/${levelId}`, {
                             headers: {
@@ -248,6 +433,13 @@
                         initializeGame(data);
                         currentLevelId = levelId;
                         highlightCurrentLevel(levelId);
+                        updateNextLevelButton();
+
+                        // Charge un éventuel feedback IA déjà disponible pour ce niveau.
+                        const feedback = await fetchFeedback(levelId);
+                        if (feedback && feedback.status) {
+                            displayFeedback(feedback.status, feedback.result);
+                        }
                     } catch (error) {
                         console.error('Error loading level:', error);
                         showNotification('Erreur lors de la récupération du niveau : ' + error.message, 'error');
@@ -256,6 +448,7 @@
 
                 await fetchLevels();
                 await fetchPlayerProgress();
+                await fetchAndDisplayRank();
             });
         </script>
 

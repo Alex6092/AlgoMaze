@@ -4,6 +4,7 @@
     <title>Level Editor</title>
     <meta charset="utf-8">
     <link rel="stylesheet" href="/css/styles.css" type="text/css">
+    <script src="/js/auth.js"></script>
     <script src="/js/shared.js"></script>
     <script src="/js/common.js"></script>
     <script src="/js/level-editor.js"></script>
@@ -91,6 +92,11 @@
     <div class="editor-container">
         <h2>Instructions Editor</h2>
         <div id="editor-container"></div>
+        <h2>Contraintes pédagogiques (évaluation IA)</h2>
+        <p style="font-size: 0.85em; color: #666; margin: 4px 0;">
+            Décris ce que la solution DOIT mettre en œuvre (par ex. « doit utiliser une boucle while et au moins une condition »). Laissé vide, l'IA n'évaluera que la qualité générale.
+        </p>
+        <textarea id="constraints-editor" rows="4" style="width: 100%; box-sizing: border-box; font-family: inherit; padding: 6px;"></textarea>
         <h2>Element Selector</h2>
         <div class="selector-container" id="selector-container">
             <!-- Tiles, gems, switches, and start positions will be added here -->
@@ -147,13 +153,14 @@
 
     document.getElementById('save-button').addEventListener('click', async () => {
         const instructions = quill.root.innerHTML;
+        const constraints = document.getElementById('constraints-editor').value;
 
         var levelData =  {
             cols: map.cols,
             rows: map.rows,
             tsize: map.tsize,
             layers: map.layers,
-        
+
             switches: map.switches,
             gems: map.gems,
             teleport1: map.teleport1,
@@ -163,7 +170,8 @@
             randomTile: map.randomTile,
             startPosition: map.startPosition,
             startDirection: map.startDirection,
-            instructions: instructions
+            instructions: instructions,
+            constraints: constraints
         };
 
         try {
@@ -231,6 +239,7 @@
         map.startDirection = "Down";
         map.startPosition = { x: 128, y: 128 };
         quill.root.innerHTML = ''; // Clear instructions
+        document.getElementById('constraints-editor').value = '';
         currentLevelId = -1;
     });
 
@@ -257,6 +266,7 @@
     function loadLevelData(data) {
         initializeGame(data);
         quill.root.innerHTML = data.instructions;
+        document.getElementById('constraints-editor').value = data.constraints || '';
     }
 
     async function fetchLevels() {

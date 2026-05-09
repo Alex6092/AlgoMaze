@@ -1,30 +1,50 @@
+import 'dotenv/config';
 import { createClient } from 'redis';
 import vm from 'node:vm';
+import http from 'node:http';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import { Server as SocketIOServer } from 'socket.io';
 import { Direction, SwitchState } from './shared.js';
 import userRouter from './routes/user.js';
 import redisClient from './redisClient.js';
 import { __dirname } from './utils.js';
-import { generateToken, verifyToken, userFromToken } from './jwtConfig.js';
+import { generateToken, verifyToken, userFromToken, slidingRefresh } from './jwtConfig.js';
+import config from './config.json' assert { type: 'json' };
+import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
+import { computeUserRank, getUserBadges } from './badges.js';
 const app = express();
 app.use(express.json());
 app.use(cors({
     origin: 'http://localhost:3000', // Remplacez par votre domaine
-    credentials: true
+    credentials: true,
+    exposedHeaders: ['X-Refreshed-Token']
 }));
 app.use(cookieParser());
 app.use(express.static('public'))
+
+// Sliding refresh pour les requêtes API authentifiées via Bearer token.
+// Si plus de la moitié du TTL est écoulée, on régénère le token et on l'expose
+// au client via le header X-Refreshed-Token (le client met à jour son storage).
+app.use((req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        const result = slidingRefresh(token);
+        if (result.refreshed) {
+            res.setHeader('X-Refreshed-Token', result.token);
+        }
+    }
+    next();
+});
+
 app.use('/user', userRouter);
 
-// Middleware pour vérifier l'authentification
+// Middleware pour vérifier l'authentification (cookie pour les pages HTML)
 app.use((req, res, next) => {
     const token = req.cookies.token;
     const publicPaths = ['/login', '/register', '/user/login', '/', '/user/register', '/check_completion']; // Ajoutez ici les routes publiques
-
-    //console.log(`Requested path: ${req.path}`); // Log du chemin demandé
-    //console.log(`Token: ${token}`); // Log du token
 
     if (publicPaths.includes(req.path)) {
         return next();
@@ -34,20 +54,28 @@ app.use((req, res, next) => {
         try {
             const decoded = verifyToken(token);
             req.user = decoded;
+
+
+            // Sliding refresh sur le cookie : on renouvelle si plus de la moitié du TTL est écoulée.
+            const refreshResult = slidingRefresh(token);
+            if (refreshResult.refreshed) {
+                res.cookie('token', refreshResult.token, { httpOnly: false, secure: false });
+                res.setHeader('X-Refreshed-Token', refreshResult.token);
+            }
+
             // Disable result caching:
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
             res.setHeader('Surrogate-Control', 'no-store'); // pour certains CDN
             //console.log('Token valid, user authenticated');
+
             return next();
         } catch (err) {
-            //console.log('Invalid token');
             res.clearCookie('token');
             return res.redirect('/login');
         }
     } else {
-        //console.log('No token provided');
         return res.redirect('/login');
     }
 });
@@ -115,6 +143,25 @@ app.get('/progress', async (req, res) => {
     }
     else
         res.status(403).send({error: "Not authenticated"});
+});
+
+app.get('/solutions', async (req, res) => {
+    const token = req.cookies.token;
+    if (token) {
+        try {
+            const decoded = verifyToken(token);
+            const user = JSON.parse(await redisClient.get('user:' + decoded.userId));
+            if (user.isAdmin)
+                res.sendFile(__dirname + '/solutions.html');
+            else
+                res.redirect('/maze');
+        }
+        catch(error) {
+            res.status(500).send({ error: "Unexpected error" });
+        }
+    }
+    else
+        res.status(403).send({ error: "Not authenticated" });
 });
 
 // API :
@@ -199,7 +246,7 @@ app.get('/level/:uid/usersolution', async (req, res) => {
 });
 
 app.post('/checkanswer', async (req, res) => {
-    
+
     try {
         const { levelId, code } = req.body;
         const token = req.headers.authorization.split(" ")[1];
@@ -210,26 +257,41 @@ app.post('/checkanswer', async (req, res) => {
             var levelData = JSON.parse(await loadLevel(levelId));
             var hasRandomTiles = levelData.randomTile != null && levelData.randomTile.length > 0;
 
-            var result = false; 
+            var runOutcome = { ok: false, timeout: false, error: null };
             var nbVerify = 0;
             // Si il y a des tuiles aléatoires, on réalise plusieurs tests du code :
             do
             {
-                result = checkAnswer(levelData, code);
+                runOutcome = tryRunUserCode(levelData, code);
                 nbVerify++;
-            } while(hasRandomTiles && nbVerify < 10 && result);
-            
+            } while(hasRandomTiles && nbVerify < 10 && runOutcome.ok);
 
-            // L'utilisateur a réussi le niveau :
-            // On met à jour son progrès et on enregistre sa réponse.
-            if(result)
+            var result = runOutcome.ok;
+
+            // Sauvegarde systématique de la dernière tentative (valide ou non) et de l'historique.
+            await redisClient.set('usersolution:'+ user.username + ':level:' + levelId, code);
+            await saveSolutionToHistory(user.username, levelId, code, result, 'check');
+
+            if(result && levelId > user.lastCompletedLevel)
             {
-                if(levelId > user.lastCompletedLevel)
-                {
-                    user.lastCompletedLevel = levelId;
-                    await redisClient.set('user:' + user.username, JSON.stringify(user));
+                user.lastCompletedLevel = levelId;
+                await redisClient.set('user:' + user.username, JSON.stringify(user));
+            }
+
+            // Si la solution est valide, enfile une évaluation IA en arrière-plan.
+            // Le client sera notifié via WebSocket quand le feedback est prêt.
+            if (result) {
+                try {
+                    await enqueueFeedbackJob({
+                        username: user.username,
+                        levelId,
+                        code,
+                        instructions: levelData.instructions || '',
+                        constraints: levelData.constraints || ''
+                    });
+                } catch (e) {
+                    console.error('[checkanswer] enqueue feedback failed:', e.message);
                 }
-                await redisClient.set('usersolution:'+ user.username + ':level:' + levelId, code);
             }
 
             res.send(result);
@@ -241,6 +303,37 @@ app.post('/checkanswer', async (req, res) => {
     } catch (error) {
         console.log("[ERROR] /checkanswer " + error);
         res.status(500).send({ error: 'Error checking answer ...' });
+    }
+});
+
+// Pré-check serveur avant exécution locale dans le navigateur.
+// Sert à détecter les boucles infinies (timeout) et à sauvegarder le code de l'étudiant
+// avant qu'il ne lance l'exécution dans son navigateur (qui pourrait freezer).
+// Retourne { ok, timeout, error }.
+app.post('/precheck', async (req, res) => {
+    try {
+        const { levelId, code } = req.body;
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+
+        if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
+        {
+            const levelData = JSON.parse(await loadLevel(levelId));
+            const outcome = tryRunUserCode(levelData, code);
+
+            // Sauvegarde la dernière version du code + entrée dans l'historique.
+            await redisClient.set('usersolution:'+ user.username + ':level:' + levelId, code);
+            await saveSolutionToHistory(user.username, levelId, code, outcome.ok, 'run');
+
+            res.send(outcome);
+        }
+        else
+        {
+            res.status(403).send({ error: 'You have not reached this level'});
+        }
+    } catch (error) {
+        console.log("[ERROR] /precheck " + error);
+        res.status(500).send({ error: 'Erreur serveur lors du pré-check' });
     }
 });
 
@@ -327,6 +420,66 @@ app.get('/userprogressreport', async (req, res) => {
     }
 });
 
+// Vue admin : toutes les solutions d'un utilisateur (par niveau), avec feedback IA si disponible.
+app.get('/admin/solutions/user/:username', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const adminUser = await userFromToken(token);
+        if (!adminUser.isAdmin) {
+            return res.status(403).send({ error: 'You are not an administrator' });
+        }
+
+        const username = req.params.username.toLowerCase();
+        const solutionKeys = await redisClient.keys('usersolution:' + username + ':level:*');
+        const result = [];
+        for (const key of solutionKeys) {
+            const levelId = parseInt(key.substring(('usersolution:' + username + ':level:').length));
+            const code = await redisClient.get(key);
+            const historyRaw = await redisClient.lRange('solutionhistory:' + username + ':level:' + levelId, 0, -1);
+            const history = historyRaw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(x => x);
+            const feedbackStatus = await getFeedbackStatus(username, levelId);
+            const feedbackResult = await getFeedbackResult(username, levelId);
+            result.push({ levelId, code, history, feedbackStatus, feedbackResult });
+        }
+        result.sort((a, b) => a.levelId - b.levelId);
+        res.send(result);
+    } catch (error) {
+        console.log("[ERROR] /admin/solutions/user/:username " + error);
+        res.status(500).send({ error: 'Failed to fetch solutions' });
+    }
+});
+
+// Vue admin : toutes les solutions soumises pour un niveau donné (par utilisateur), avec feedback IA si disponible.
+app.get('/admin/solutions/level/:levelId', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const adminUser = await userFromToken(token);
+        if (!adminUser.isAdmin) {
+            return res.status(403).send({ error: 'You are not an administrator' });
+        }
+
+        const levelId = parseInt(req.params.levelId);
+        const solutionKeys = await redisClient.keys('usersolution:*:level:' + levelId);
+        const result = [];
+        for (const key of solutionKeys) {
+            // Format de clé : usersolution:<username>:level:<id>
+            const parts = key.split(':');
+            const username = parts[1];
+            const code = await redisClient.get(key);
+            const historyRaw = await redisClient.lRange('solutionhistory:' + username + ':level:' + levelId, 0, -1);
+            const history = historyRaw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(x => x);
+            const feedbackStatus = await getFeedbackStatus(username, levelId);
+            const feedbackResult = await getFeedbackResult(username, levelId);
+            result.push({ username, code, history, feedbackStatus, feedbackResult });
+        }
+        result.sort((a, b) => a.username.localeCompare(b.username));
+        res.send(result);
+    } catch (error) {
+        console.log("[ERROR] /admin/solutions/level/:levelId " + error);
+        res.status(500).send({ error: 'Failed to fetch solutions' });
+    }
+});
+
 app.post('/check_completion', async (req, res) => {
     try
     {
@@ -351,14 +504,133 @@ app.post('/check_completion', async (req, res) => {
     }
 });
 
-app.listen(port, () => {
+// Rang global de l'utilisateur courant : médiane glissante des XP des derniers niveaux.
+app.get('/user/rank', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+        const windowSize = (config && config.slidingMedianWindow) || 10;
+        const rank = await computeUserRank(user.username, windowSize);
+        res.send(rank);
+    } catch (error) {
+        console.log("[ERROR] /user/rank " + error);
+        res.status(500).send({ error: 'Failed to compute rank' });
+    }
+});
+
+// Tous les badges de l'utilisateur courant, par niveau.
+app.get('/user/badges', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+        const badges = await getUserBadges(user.username);
+        res.send(badges);
+    } catch (error) {
+        console.log("[ERROR] /user/badges " + error);
+        res.status(500).send({ error: 'Failed to fetch badges' });
+    }
+});
+
+// Récupère le feedback IA stocké pour (utilisateur courant, niveau).
+// Utilisé au chargement d'un niveau pour afficher un éventuel feedback existant.
+app.get('/feedback/:levelId', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+        const levelId = parseInt(req.params.levelId);
+        const status = await getFeedbackStatus(user.username, levelId);
+        const result = await getFeedbackResult(user.username, levelId);
+        res.send({ status, result });
+    } catch (error) {
+        console.log("[ERROR] /feedback/:levelId " + error);
+        res.status(500).send({ error: 'Failed to fetch feedback' });
+    }
+});
+
+// Vue admin : feedback IA stocké pour un (user, level).
+app.get('/admin/feedback/:username/:levelId', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const adminUser = await userFromToken(token);
+        if (!adminUser.isAdmin) {
+            return res.status(403).send({ error: 'You are not an administrator' });
+        }
+        const username = req.params.username.toLowerCase();
+        const levelId = parseInt(req.params.levelId);
+        const status = await getFeedbackStatus(username, levelId);
+        const result = await getFeedbackResult(username, levelId);
+        res.send({ status, result });
+    } catch (error) {
+        console.log("[ERROR] /admin/feedback/:username/:levelId " + error);
+        res.status(500).send({ error: 'Failed to fetch feedback' });
+    }
+});
+
+const httpServer = http.createServer(app);
+const io = new SocketIOServer(httpServer, {
+    cors: { origin: 'http://localhost:3000', credentials: true }
+});
+
+io.use(async (socket, next) => {
+    try {
+        const token = socket.handshake.auth && socket.handshake.auth.token;
+        if (!token) return next(new Error('No token'));
+        const user = await userFromToken(token);
+        socket.data.username = user.username;
+        next();
+    } catch (err) {
+        next(new Error('Authentication error'));
+    }
+});
+
+io.on('connection', (socket) => {
+    // Chaque utilisateur a sa propre room — on émet vers user:<username>.
+    socket.join('user:' + socket.data.username);
+});
+
+httpServer.listen(port, () => {
     console.log("AlgoMaze API running on port " + port);
 });
+
+await startFeedbackWorker(io);
 
 // Utils functions :
 async function loadLevel(levelId)
 {
     return await redisClient.get("level:" + levelId);
+}
+
+// Exécute checkAnswer en isolant les erreurs : distingue un timeout (boucle infinie probable)
+// d'une autre erreur d'exécution.
+function tryRunUserCode(levelData, code)
+{
+    try {
+        const ok = checkAnswer(levelData, code);
+        return { ok, timeout: false, error: null };
+    } catch (err) {
+        const isTimeout = err && (err.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT' || /timed out/i.test(err.message || ''));
+        return {
+            ok: false,
+            timeout: isTimeout,
+            error: isTimeout ? 'Le code a dépassé le temps maximal d\'exécution (boucle infinie probable).' : (err.message || String(err))
+        };
+    }
+}
+
+// Pousse une entrée dans l'historique horodaté du code de l'utilisateur pour un niveau donné.
+// On garde au plus config.maxSolutionHistory entrées (les plus récentes en tête de liste).
+async function saveSolutionToHistory(username, levelId, code, valid, runType)
+{
+    const key = `solutionhistory:${username}:level:${levelId}`;
+    const entry = JSON.stringify({
+        code,
+        timestamp: Date.now(),
+        valid: !!valid,
+        runType // 'run' (précheck) ou 'check' (validation)
+    });
+    await redisClient.lPush(key, entry);
+    const maxHistory = (config && config.maxSolutionHistory) || 10;
+    await redisClient.lTrim(key, 0, maxHistory - 1);
 }
 
 async function saveLevel(data, lvlId)

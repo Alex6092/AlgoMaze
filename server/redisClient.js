@@ -1,9 +1,13 @@
 import { createClient } from 'redis';
-import config from './config.json' assert { type: 'json' };
+
+const { REDIS_USER, REDIS_PASSWORD, REDIS_HOST, REDIS_PORT } = process.env;
+if (!REDIS_USER || !REDIS_PASSWORD || !REDIS_HOST || !REDIS_PORT) {
+    throw new Error('Variables Redis manquantes (REDIS_USER, REDIS_PASSWORD, REDIS_HOST, REDIS_PORT). Vérifiez votre .env.');
+}
 
 const client = createClient({
-    // Example : url: 'redis://default:rootme@192.168.65.207:6379'
-    url: 'redis://' + config.redisUser + ':' + config.redisPassword + '@' + config.redisHost + ':' + config.redisPort
+    // Example : url: 'redis://user:password@host:6379'
+    url: 'redis://' + REDIS_USER + ':' + REDIS_PASSWORD + '@' + REDIS_HOST + ':' + REDIS_PORT
 });
 
 client.on('error', (err) => {

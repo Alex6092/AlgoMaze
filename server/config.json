@@ -1,7 +1,5 @@
 {
     "allowRegistration": true,
-    "redisUser": "default",
-    "redisPassword": "rootme",
-    "redisHost": "192.168.1.49",
-    "redisPort": 6379
+    "maxSolutionHistory": 10,
+    "slidingMedianWindow": 10
 }
