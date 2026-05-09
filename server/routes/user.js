@@ -115,6 +115,22 @@ router.post('/logout', (req, res) => {
     res.json({message: 'Logged out successfully'});
 });
 
+// Récupère le profil de l'utilisateur courant (utilisé par l'app shell pour conditionnellement afficher la nav admin).
+router.get('/me', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const user = await userFromToken(token);
+        res.send({
+            username: user.username,
+            isAdmin: !!user.isAdmin,
+            lastCompletedLevel: user.lastCompletedLevel || 0
+        });
+    } catch (error) {
+        console.log("[ERROR] /user/me " + error);
+        res.status(401).send({ error: 'Not authenticated' });
+    }
+});
+
 // Get user progress
 router.get('/progress', async (req, res) => {
     try {
