@@ -37,6 +37,28 @@
         <div id="results-container"></div>
     </main>
 
+    <!-- Modale de comparaison côte à côte (diff) -->
+    <div class="modal-overlay" id="diff-modal" role="dialog" aria-hidden="true">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="diff-title">Comparaison</h3>
+                <button class="modal-close" id="diff-close" type="button" aria-label="Fermer">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="diff-grid">
+                    <div class="diff-side">
+                        <h4 id="diff-label-a">A</h4>
+                        <pre class="diff-pre" id="diff-pre-a"></pre>
+                    </div>
+                    <div class="diff-side">
+                        <h4 id="diff-label-b">B</h4>
+                        <pre class="diff-pre" id="diff-pre-b"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="notification-container"></div>
 
     <script>
@@ -241,23 +263,252 @@
             if (!pairs.length) {
                 inner = '<div class="muted" style="font-size:0.9rem;">Aucune paire suspecte détectée pour ce niveau.</div>';
             } else {
-                inner = pairs.map(p => `
-                    <div class="similarity-pair">
+                inner = pairs.map((p, idx) => `
+                    <div class="similarity-pair" data-pair-idx="${idx}" title="Cliquer pour comparer les deux solutions">
                         <span class="pair-users">${escapeHtml(p.userA)} ↔ ${escapeHtml(p.userB)}</span>
+                        <span class="pair-hint">cliquer pour comparer →</span>
                         <span class="pair-score">${Math.round(p.similarity * 100)}%</span>
                     </div>
                 `).join('');
             }
+            const graphPanel = pairs.length >= 2
+                ? `<details class="constellation" open>
+                       <summary>🪐 Constellation des liens (${pairs.length} paire${pairs.length > 1 ? 's' : ''})</summary>
+                       <svg class="constellation-svg" id="constellation-svg" viewBox="0 0 800 420" preserveAspectRatio="xMidYMid meet"></svg>
+                   </details>`
+                : '';
             return `
-                <div class="similarity-panel">
+                <div class="similarity-panel" id="similarity-panel">
                     <h3>🔍 Analyse de similarité</h3>
                     <div class="baseline-info">
                         ${analysis.sampleSize} solution${analysis.sampleSize > 1 ? 's' : ''} comparée${analysis.sampleSize > 1 ? 's' : ''}.
                         Similarité moyenne du niveau : <b>${baselinePct}%</b> · Seuil de signalement : <b>${cutoffPct}%</b>.
                     </div>
                     ${inner}
+                    ${graphPanel}
                 </div>
             `;
+        }
+
+        // ----- Constellation graph (force-directed, SVG vanilla) -----
+        function renderConstellation(svgEl, pairs) {
+            if (!svgEl || !pairs || !pairs.length) return;
+            const W = 800, H = 420;
+
+            // 1. Construire la liste des nœuds uniques.
+            const nodeMap = new Map();
+            pairs.forEach(p => {
+                if (!nodeMap.has(p.userA)) nodeMap.set(p.userA, { id: p.userA, degree: 0 });
+                if (!nodeMap.has(p.userB)) nodeMap.set(p.userB, { id: p.userB, degree: 0 });
+                nodeMap.get(p.userA).degree++;
+                nodeMap.get(p.userB).degree++;
+            });
+            const nodes = Array.from(nodeMap.values());
+            const edges = pairs.map(p => ({
+                source: nodeMap.get(p.userA),
+                target: nodeMap.get(p.userB),
+                weight: p.similarity
+            }));
+
+            // 2. Init positions aléatoires (mais déterministes par username pour stabilité visuelle).
+            const seedRand = (s) => {
+                let h = 2166136261 >>> 0;
+                for (let i = 0; i < s.length; i++) { h = Math.imul(h ^ s.charCodeAt(i), 16777619); }
+                return ((h >>> 0) % 10000) / 10000;
+            };
+            nodes.forEach(n => {
+                n.x = 60 + seedRand(n.id) * (W - 120);
+                n.y = 60 + seedRand(n.id + 'y') * (H - 120);
+                n.vx = 0; n.vy = 0;
+            });
+
+            // 3. Force-directed (Fruchterman-Reingold simplifié).
+            const k = Math.sqrt((W * H) / Math.max(1, nodes.length)) * 0.6;
+            const ITER = 200;
+            for (let it = 0; it < ITER; it++) {
+                const t = 1 - it / ITER; // refroidissement
+                // Reset
+                nodes.forEach(n => { n.fx = 0; n.fy = 0; });
+                // Répulsion
+                for (let a = 0; a < nodes.length; a++) {
+                    for (let b = a + 1; b < nodes.length; b++) {
+                        let dx = nodes[a].x - nodes[b].x;
+                        let dy = nodes[a].y - nodes[b].y;
+                        let d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+                        const f = (k * k) / d;
+                        nodes[a].fx += (dx / d) * f;
+                        nodes[a].fy += (dy / d) * f;
+                        nodes[b].fx -= (dx / d) * f;
+                        nodes[b].fy -= (dy / d) * f;
+                    }
+                }
+                // Attraction (plus le lien est fort, plus on tire)
+                edges.forEach(e => {
+                    let dx = e.source.x - e.target.x;
+                    let dy = e.source.y - e.target.y;
+                    let d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+                    const f = (d * d / k) * (0.5 + e.weight);
+                    e.source.fx -= (dx / d) * f;
+                    e.source.fy -= (dy / d) * f;
+                    e.target.fx += (dx / d) * f;
+                    e.target.fy += (dy / d) * f;
+                });
+                // Application avec amortissement et limites
+                nodes.forEach(n => {
+                    const disp = Math.sqrt(n.fx * n.fx + n.fy * n.fy) || 0.01;
+                    const limit = Math.min(disp, 12) * t;
+                    n.x += (n.fx / disp) * limit;
+                    n.y += (n.fy / disp) * limit;
+                    n.x = Math.max(40, Math.min(W - 40, n.x));
+                    n.y = Math.max(40, Math.min(H - 40, n.y));
+                });
+            }
+
+            // 4. Rendu SVG.
+            const svgNS = 'http://www.w3.org/2000/svg';
+            svgEl.innerHTML = '';
+
+            // Edges en premier (sous les nodes)
+            edges.forEach((e, idx) => {
+                const line = document.createElementNS(svgNS, 'line');
+                line.setAttribute('x1', e.source.x);
+                line.setAttribute('y1', e.source.y);
+                line.setAttribute('x2', e.target.x);
+                line.setAttribute('y2', e.target.y);
+                line.setAttribute('stroke-width', 1 + e.weight * 4);
+                line.setAttribute('stroke-opacity', 0.4 + e.weight * 0.5);
+                line.setAttribute('class', 'edge');
+                line.setAttribute('data-pair-idx', idx);
+                line.setAttribute('aria-label',
+                    e.source.id + ' ↔ ' + e.target.id + ' : ' + Math.round(e.weight * 100) + '%');
+                svgEl.appendChild(line);
+
+                // Label de pourcentage au milieu
+                const lbl = document.createElementNS(svgNS, 'text');
+                lbl.setAttribute('x', (e.source.x + e.target.x) / 2);
+                lbl.setAttribute('y', (e.source.y + e.target.y) / 2 - 4);
+                lbl.setAttribute('text-anchor', 'middle');
+                lbl.setAttribute('class', 'edge-label');
+                lbl.textContent = Math.round(e.weight * 100) + '%';
+                svgEl.appendChild(lbl);
+            });
+
+            // Nodes
+            nodes.forEach(n => {
+                const r = 18 + Math.min(n.degree * 2, 12);
+                const circle = document.createElementNS(svgNS, 'circle');
+                circle.setAttribute('cx', n.x);
+                circle.setAttribute('cy', n.y);
+                circle.setAttribute('r', r);
+                circle.setAttribute('class', 'node');
+                svgEl.appendChild(circle);
+
+                const text = document.createElementNS(svgNS, 'text');
+                text.setAttribute('x', n.x);
+                text.setAttribute('y', n.y + 4);
+                text.setAttribute('class', 'node-label');
+                text.textContent = n.id.length > 10 ? (n.id.slice(0, 9) + '…') : n.id;
+                svgEl.appendChild(text);
+            });
+        }
+
+        // ----- Diff LCS ligne à ligne -----
+        function lineDiff(a, b) {
+            const aLines = (a || '').split('\n');
+            const bLines = (b || '').split('\n');
+            const m = aLines.length, n = bLines.length;
+            // Table LCS
+            const lcs = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+            for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                    if (aLines[i - 1] === bLines[j - 1]) {
+                        lcs[i][j] = lcs[i - 1][j - 1] + 1;
+                    } else {
+                        lcs[i][j] = Math.max(lcs[i - 1][j], lcs[i][j - 1]);
+                    }
+                }
+            }
+            // Backtrack
+            const ops = [];
+            let i = m, j = n;
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && aLines[i - 1] === bLines[j - 1]) {
+                    ops.unshift({ type: 'equal', a: aLines[i - 1], b: bLines[j - 1] });
+                    i--; j--;
+                } else if (j > 0 && (i === 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
+                    ops.unshift({ type: 'add', b: bLines[j - 1] });
+                    j--;
+                } else {
+                    ops.unshift({ type: 'remove', a: aLines[i - 1] });
+                    i--;
+                }
+            }
+            return ops;
+        }
+
+        // Convertit la liste d'opérations en deux colonnes alignées (lignes vides
+        // côté A pour les ajouts, vides côté B pour les retraits).
+        function renderDiffSides(ops) {
+            const left = [];
+            const right = [];
+            const renderLine = (cls, gutter, content) =>
+                `<span class="diff-line ${cls}"><span class="gutter">${gutter}</span>${escapeHtml(content)}</span>`;
+            ops.forEach(op => {
+                if (op.type === 'equal') {
+                    left.push(renderLine('equal', ' ', op.a));
+                    right.push(renderLine('equal', ' ', op.b));
+                } else if (op.type === 'add') {
+                    left.push(renderLine('empty', ' ', ''));
+                    right.push(renderLine('add', '+', op.b));
+                } else if (op.type === 'remove') {
+                    left.push(renderLine('remove', '−', op.a));
+                    right.push(renderLine('empty', ' ', ''));
+                }
+            });
+            return { left: left.join(''), right: right.join('') };
+        }
+
+        // ----- Modale de comparaison -----
+        let _solutionsByUser = {}; // { username -> code } pour le niveau courant
+        let _currentLevelLabel = '';
+        let _currentSuspectPairs = [];
+
+        function openDiffModal(userA, userB, similarity) {
+            const codeA = _solutionsByUser[userA] || '';
+            const codeB = _solutionsByUser[userB] || '';
+            const ops = lineDiff(codeA, codeB);
+            const sides = renderDiffSides(ops);
+
+            document.getElementById('diff-title').textContent =
+                `Comparaison : ${userA} ↔ ${userB}` +
+                (similarity != null ? `  ·  similarité ${Math.round(similarity * 100)}%` : '') +
+                (_currentLevelLabel ? `  (${_currentLevelLabel})` : '');
+            document.getElementById('diff-label-a').textContent = userA;
+            document.getElementById('diff-label-b').textContent = userB;
+            document.getElementById('diff-pre-a').innerHTML = sides.left;
+            document.getElementById('diff-pre-b').innerHTML = sides.right;
+
+            const modal = document.getElementById('diff-modal');
+            modal.classList.add('open');
+            modal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeDiffModal() {
+            const modal = document.getElementById('diff-modal');
+            modal.classList.remove('open');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+
+        // Délégation de clic pour la liste des paires + le graph.
+        function bindSimilarityClicks(panelEl) {
+            if (!panelEl) return;
+            panelEl.addEventListener('click', (e) => {
+                const target = e.target.closest('[data-pair-idx]');
+                if (!target) return;
+                const idx = parseInt(target.getAttribute('data-pair-idx'), 10);
+                const pair = _currentSuspectPairs[idx];
+                if (pair) openDiffModal(pair.userA, pair.userB, pair.similarity);
+            });
         }
 
         async function fetchSimilarity(levelId) {
@@ -295,14 +546,32 @@
                 if (!response.ok) throw new Error('Erreur ' + response.status);
                 const data = await response.json();
 
-                // En mode niveau : on ajoute en tête le panneau d'analyse de similarité.
+                // En mode niveau : on ajoute en tête le panneau d'analyse de similarité,
+                // et on cache les codes pour la popup de comparaison.
                 let header = '';
+                let simAnalysis = null;
                 if (mode === 'level') {
-                    const sim = await fetchSimilarity(target);
-                    header = renderSimilarityPanel(sim);
+                    _solutionsByUser = {};
+                    data.forEach(entry => { _solutionsByUser[entry.username] = entry.code || ''; });
+                    _currentLevelLabel = 'Niveau ' + target;
+                    simAnalysis = await fetchSimilarity(target);
+                    _currentSuspectPairs = (simAnalysis && simAnalysis.suspectPairs) || [];
+                    header = renderSimilarityPanel(simAnalysis);
+                } else {
+                    _solutionsByUser = {};
+                    _currentSuspectPairs = [];
+                    _currentLevelLabel = '';
                 }
 
                 container.innerHTML = header + (mode === 'user' ? renderUserSolutions(data) : renderLevelSolutions(data));
+
+                // Une fois le panneau monté, on dessine la constellation et on branche les clics.
+                if (mode === 'level' && simAnalysis) {
+                    const panel = document.getElementById('similarity-panel');
+                    const svg = document.getElementById('constellation-svg');
+                    bindSimilarityClicks(panel);
+                    if (svg) renderConstellation(svg, _currentSuspectPairs);
+                }
             } catch (err) {
                 container.innerHTML = '';
                 showNotification('Erreur lors du chargement : ' + err.message, 'error');
@@ -314,6 +583,14 @@
                 radio.addEventListener('change', () => populateTargetSelect(radio.value));
             });
             document.getElementById('load-button').addEventListener('click', loadSolutions);
+            // Modale comparaison : fermeture par bouton, clic sur l'overlay, ou ESC.
+            document.getElementById('diff-close').addEventListener('click', closeDiffModal);
+            document.getElementById('diff-modal').addEventListener('click', (e) => {
+                if (e.target.id === 'diff-modal') closeDiffModal();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeDiffModal();
+            });
             await populateTargetSelect('user');
         });
     </script>
