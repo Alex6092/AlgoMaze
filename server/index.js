@@ -670,6 +670,152 @@ app.get('/feedback/:levelId', async (req, res) => {
     }
 });
 
+// Compte les solutions stockées qui n'ont pas encore reçu de feedback IA.
+// Utilisé par l'admin pour décider de lancer (ou non) une évaluation rétroactive.
+// Désactivable via config.enableBulkEvaluation : utile pour fermer la porte
+// l'année prochaine quand le rattrapage initial sera terminé.
+app.get('/admin/missing-feedbacks', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const adminUser = await userFromToken(token);
+        if (!adminUser.isAdmin) {
+            return res.status(403).send({ error: 'You are not an administrator' });
+        }
+        const enabled = !!(config && config.enableBulkEvaluation);
+        if (!enabled) {
+            return res.send({ enabled: false, missing: 0, total: 0 });
+        }
+        const solutionKeys = await redisClient.keys('usersolution:*:level:*');
+        let missing = 0;
+        for (const key of solutionKeys) {
+            const parts = key.split(':');
+            const username = parts[1];
+            const levelId = parseInt(parts[3]);
+            const status = await getFeedbackStatus(username, levelId);
+            // On ignore les feedbacks 'done' (déjà évalué) et 'pending' (déjà en file).
+            if (status !== 'done' && status !== 'pending') missing++;
+        }
+        res.send({ enabled: true, missing, total: solutionKeys.length });
+    } catch (error) {
+        console.log("[ERROR] /admin/missing-feedbacks " + error);
+        res.status(500).send({ error: 'Failed to count missing feedbacks' });
+    }
+});
+
+// Enfile une évaluation IA pour chaque solution stockée n'ayant pas de feedback.
+// Re-vérifie la validité fonctionnelle (tryRunUserCode) pour ne pas envoyer à l'IA
+// une solution qui ne marche pas. La queue worker traite les jobs un à un.
+app.post('/admin/bulk-evaluate', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const adminUser = await userFromToken(token);
+        if (!adminUser.isAdmin) {
+            return res.status(403).send({ error: 'You are not an administrator' });
+        }
+        if (!(config && config.enableBulkEvaluation)) {
+            return res.status(403).send({ error: 'Bulk evaluation is disabled in config' });
+        }
+
+        let enqueued = 0;
+        let alreadyDone = 0;
+        let alreadyPending = 0;
+        let invalidSkipped = 0;
+        let errors = 0;
+
+        const solutionKeys = await redisClient.keys('usersolution:*:level:*');
+        for (const key of solutionKeys) {
+            try {
+                const parts = key.split(':');
+                const username = parts[1];
+                const levelId = parseInt(parts[3]);
+
+                const status = await getFeedbackStatus(username, levelId);
+                if (status === 'done') { alreadyDone++; continue; }
+                if (status === 'pending') { alreadyPending++; continue; }
+
+                const code = await redisClient.get(key);
+                if (!code) { invalidSkipped++; continue; }
+
+                const levelRaw = await loadLevel(levelId);
+                if (!levelRaw) { invalidSkipped++; continue; }
+                const levelData = JSON.parse(levelRaw);
+
+                const outcome = tryRunUserCode(levelData, code);
+                if (!outcome.ok) { invalidSkipped++; continue; }
+
+                const ok = await enqueueFeedbackJob({
+                    username,
+                    levelId,
+                    code,
+                    instructions: levelData.instructions || '',
+                    constraints: levelData.constraints || ''
+                });
+                if (ok) enqueued++; else alreadyPending++;
+            } catch (e) {
+                console.error('[bulk-evaluate] erreur sur ' + key + ' : ' + e.message);
+                errors++;
+            }
+        }
+
+        console.log('[bulk-evaluate] enqueued=' + enqueued + ' alreadyDone=' + alreadyDone +
+            ' alreadyPending=' + alreadyPending + ' invalidSkipped=' + invalidSkipped + ' errors=' + errors);
+        res.send({ enqueued, alreadyDone, alreadyPending, invalidSkipped, errors });
+    } catch (error) {
+        console.log("[ERROR] /admin/bulk-evaluate " + error);
+        res.status(500).send({ error: 'Failed to bulk-evaluate' });
+    }
+});
+
+// Regénère le feedback IA pour une (user, level) précise.
+// Utile pour tester différents modèles ou ré-évaluer après modification d'un prompt.
+// L'ancien résultat reste affiché tant que le nouveau n'arrive pas.
+app.post('/admin/regenerate-feedback/:username/:levelId', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const adminUser = await userFromToken(token);
+        if (!adminUser.isAdmin) {
+            return res.status(403).send({ error: 'You are not an administrator' });
+        }
+        const username = req.params.username.toLowerCase();
+        const levelId = parseInt(req.params.levelId);
+
+        // Refuse si une évaluation est déjà en attente — évite les doublons en file.
+        const status = await getFeedbackStatus(username, levelId);
+        if (status === 'pending') {
+            return res.status(409).send({ error: 'Une évaluation est déjà en cours pour cette solution.' });
+        }
+
+        const code = await redisClient.get('usersolution:' + username + ':level:' + levelId);
+        if (!code) {
+            return res.status(404).send({ error: 'Aucune solution stockée pour ce (utilisateur, niveau).' });
+        }
+
+        const levelRaw = await loadLevel(levelId);
+        if (!levelRaw) {
+            return res.status(404).send({ error: 'Niveau introuvable.' });
+        }
+        const levelData = JSON.parse(levelRaw);
+
+        const enqueued = await enqueueFeedbackJob({
+            username,
+            levelId,
+            code,
+            instructions: levelData.instructions || '',
+            constraints: levelData.constraints || ''
+        });
+
+        if (!enqueued) {
+            // Cas marginal (race condition) : le statut est passé à pending entre-temps.
+            return res.status(409).send({ error: 'Une évaluation est déjà en cours pour cette solution.' });
+        }
+
+        res.send({ status: 'queued', username, levelId });
+    } catch (error) {
+        console.log("[ERROR] /admin/regenerate-feedback " + error);
+        res.status(500).send({ error: 'Failed to regenerate feedback' });
+    }
+});
+
 // Vue admin : feedback IA stocké pour un (user, level).
 app.get('/admin/feedback/:username/:levelId', async (req, res) => {
     try {
