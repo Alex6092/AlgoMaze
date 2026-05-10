@@ -64,10 +64,11 @@ export function interpretSignals(signals, codeLength) {
     const pasteRatio = (signals.pasteChars || 0) / len;
 
     const flags = {
-        paste:    pasteRatio >= (c.pasteRatioThreshold ?? 0.7),
-        away:     (signals.awaySeconds || 0) >= (c.awaySecondsThreshold ?? 60),
-        focus:    (signals.focusLossCount || 0) >= (c.focusLossThreshold ?? 5),
-        capture:  (signals.printScreenCount || 0) >= (c.printScreenThreshold ?? 1)
+        paste:       pasteRatio >= (c.pasteRatioThreshold ?? 0.7),
+        away:        (signals.awaySeconds || 0) >= (c.awaySecondsThreshold ?? 60),
+        focus:       (signals.focusLossCount || 0) >= (c.focusLossThreshold ?? 5),
+        capture:     (signals.printScreenCount || 0) >= (c.printScreenThreshold ?? 1),
+        imagePaste:  (signals.imagePasteCount || 0) >= (c.imagePasteThreshold ?? 1)
     };
     const suspectCount = Object.values(flags).filter(v => v).length;
     return { flags, suspectCount, pasteRatio: Math.round(pasteRatio * 100) / 100 };

@@ -15,6 +15,7 @@
         "awaySecondsThreshold": 60,
         "focusLossThreshold": 5,
         "printScreenThreshold": 1,
+        "imagePasteThreshold": 1,
         "similarityThreshold": 0.85,
         "similarityBaselineMargin": 0.15,
         "similarityMinPairs": 3
