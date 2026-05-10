@@ -1016,6 +1016,78 @@ canvas#maze {
 .signals-grid b { font-weight: 600; color: var(--text); }
 .signals-grid .label { color: var(--text-muted); font-size: 0.82rem; margin-right: 4px; }
 
+/* Mise en évidence des signaux qui dépassent le seuil. */
+.signals-grid .suspect {
+    background: var(--danger-soft);
+    color: var(--danger);
+    padding: 2px 8px;
+    border-radius: var(--r-sm);
+    margin: -2px;
+}
+.signals-grid .suspect .label,
+.signals-grid .suspect b { color: var(--danger); }
+
+/* Récap "X signaux suspects" en tête de bloc. */
+.signals-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: var(--r-full);
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-left: 8px;
+}
+.signals-summary.clean { background: var(--success-soft); color: var(--success); }
+.signals-summary.warn  { background: var(--warning-soft); color: var(--warning); }
+.signals-summary.alert { background: var(--danger-soft); color: var(--danger); }
+
+/* Flag de saut de qualité dans le feedback */
+.quality-jump-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: var(--r-full);
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: var(--warning-soft);
+    color: var(--warning);
+    margin-left: 8px;
+}
+
+/* Section similarité (vue par niveau) */
+.similarity-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 16px;
+    margin-bottom: 20px;
+}
+.similarity-panel h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+}
+.similarity-panel .baseline-info {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    margin-bottom: 10px;
+}
+.similarity-pair {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    background: var(--danger-soft);
+    border-left: 3px solid var(--danger);
+    border-radius: var(--r-sm);
+    font-size: 0.92rem;
+}
+.similarity-pair .pair-users { font-weight: 600; }
+.similarity-pair .pair-score { color: var(--danger); font-weight: 700; font-variant-numeric: tabular-nums; }
+
 .empty-state {
     color: var(--text-muted);
     font-style: italic;

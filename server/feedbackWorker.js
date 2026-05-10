@@ -8,6 +8,7 @@ import { createClient } from 'redis';
 import redisClient from './redisClient.js';
 import { evaluateSolution } from './llmClient.js';
 import { badgeForScore, persistBadge } from './badges.js';
+import { detectQualityJump } from './cheatDetection.js';
 
 const PENDING_KEY = 'feedback:queue:pending';
 const PROCESSING_KEY = 'feedback:queue:processing';
@@ -81,11 +82,23 @@ async function processJob(jobId, io) {
     try {
         const result = await evaluateSolution({ instructions, constraints, code });
 
-        // Calcule et persiste le badge / XP pour ce niveau.
+        // Calcule le badge / XP pour ce niveau.
         const badge = badgeForScore(result.score, result.constraintsRespected);
+
+        // Détection d'un saut de qualité anormal (ex. solution Bronze d'habitude
+        // → soudain Platine sur un niveau dur). Calculé AVANT persistBadge pour
+        // comparer aux XP existants.
+        const jumpInfo = await detectQualityJump(username, levelId, badge.xp);
+
         await persistBadge(username, levelId, badge.name, badge.xp);
 
-        const enriched = { ...result, badge: badge.name, xp: badge.xp, evaluatedAt: Date.now() };
+        const enriched = {
+            ...result,
+            badge: badge.name,
+            xp: badge.xp,
+            evaluatedAt: Date.now(),
+            qualityJump: jumpInfo
+        };
         await redisClient.set(resultKey(username, levelId), JSON.stringify(enriched));
         await redisClient.set(statusKey(username, levelId), 'done');
         if (io) {
