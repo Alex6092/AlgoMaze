@@ -66,6 +66,7 @@ window.AppShell = (function() {
                         ${navHtml(links, currentPath)}
                     </nav>
                     <div class="app-header-actions">
+                        <span class="player-progress" id="player-progress" style="display:none;"></span>
                         <span class="player-rank" id="player-rank" style="display:none;"></span>
                         <span class="mastery-badge" id="player-mastery" style="display:none;"></span>
                         <span class="muted" style="font-size:0.85rem;display:none;" id="app-username">${escapeHtml(username)}</span>
@@ -135,26 +136,39 @@ window.AppShell = (function() {
             if (!r.ok) return;
             const data = await r.json();
 
+            // Pill avancement (Niv X/42) : visible dès qu'on a la donnée mastery.
+            const progressEl = document.getElementById('player-progress');
+            if (progressEl && data.mastery) {
+                const m = data.mastery;
+                progressEl.innerHTML = '<span>Niv.</span> <b>' + m.completedLevels + '</b><span>/' + m.totalLevels + '</span>';
+                progressEl.title = 'Avancement dans le parcours : ' + m.progressPct + '%';
+                progressEl.style.display = 'inline-flex';
+            } else if (progressEl) {
+                progressEl.style.display = 'none';
+            }
+
             // Pill rang : visible uniquement quand l'étudiant a au moins une évaluation IA.
             const rankEl = document.getElementById('player-rank');
             if (rankEl) {
                 if (data.sample > 0) {
                     rankEl.innerHTML = '<span>Rang :</span> <b>' + (data.rank || '?') + '</b>';
-                    rankEl.title = 'Médiane ' + data.median + ' XP sur ' + data.sample + ' niveau' + (data.sample > 1 ? 'x' : '');
+                    rankEl.title = 'Médiane ' + data.median + ' XP sur ' + data.sample + ' niveau' + (data.sample > 1 ? 'x' : '') + ' (qualité récente)';
                     rankEl.style.display = 'inline-flex';
                 } else {
                     rankEl.style.display = 'none';
                 }
             }
 
-            // Pastille de maîtrise : on l'affiche dès qu'on a la donnée (même si sample=0,
-            // l'étudiant peut être déjà à un niveau d'avancement non nul).
+            // Pastille de maîtrise (compétence globale cumulée).
             const masteryEl = document.getElementById('player-mastery');
             if (masteryEl && data.mastery) {
                 const m = data.mastery;
                 masteryEl.className = 'mastery-badge ' + (m.color || 'red');
                 masteryEl.textContent = m.name;
-                masteryEl.title = 'Avancement : ' + m.progressPct + '%  ·  Qualité : ' + m.qualityPct + '%  ·  Score : ' + m.score + '%';
+                masteryEl.title =
+                    'Score : ' + m.score + '%   (' + m.totalXp + ' / ' + m.maxTotalXp + ' XP)\n' +
+                    'Avancement : ' + m.completedLevels + '/' + m.totalLevels + ' niveaux (' + m.progressPct + '%)\n' +
+                    'Qualité moyenne : ' + m.avgQualityPct + '%';
                 masteryEl.style.display = 'inline-flex';
             } else if (masteryEl) {
                 masteryEl.style.display = 'none';

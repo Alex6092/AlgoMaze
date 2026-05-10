@@ -15,7 +15,7 @@ import { __dirname } from './utils.js';
 import { generateToken, verifyToken, userFromToken, slidingRefresh } from './jwtConfig.js';
 import config from './config.json' assert { type: 'json' };
 import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
-import { computeUserRank, getUserBadges, computeMastery } from './badges.js';
+import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp } from './badges.js';
 const app = express();
 app.use(express.json());
 app.use(cors({
@@ -483,8 +483,10 @@ app.get('/userprogressreport', async (req, res) => {
                 var userData = await redisClient.get(userKey);
                 userData = JSON.parse(userData);
                 // Rang global = médiane glissante des XP des derniers niveaux validés.
+                // Maîtrise = cumul des XP sur l'ensemble des niveaux (best-ever par niveau).
                 const rankInfo = await computeUserRank(userData.username, windowSize);
-                const mastery = computeMastery(userData.lastCompletedLevel || 0, rankInfo.median);
+                const totalXp = await computeUserTotalXp(userData.username);
+                const mastery = computeMastery(userData.lastCompletedLevel || 0, totalXp);
                 result.push({
                     username: userData.username,
                     lastCompletedLevel: userData.lastCompletedLevel,
@@ -594,15 +596,16 @@ app.post('/check_completion', async (req, res) => {
 });
 
 // Rang global + niveau de maîtrise de l'utilisateur courant.
-// rang = médiane glissante des XP des derniers niveaux (qualité)
-// maîtrise = dimension limitante entre avancement (lastCompletedLevel/totalLevels) et qualité.
+// rang     = médiane glissante des XP des derniers niveaux (qualité « récente »)
+// maîtrise = XP cumulés / XP max théorique (compétence acquise globale, monotone non-décroissante)
 app.get('/user/rank', async (req, res) => {
     try {
         const token = req.headers.authorization.split(" ")[1];
         const user = await userFromToken(token);
         const windowSize = (config && config.slidingMedianWindow) || 10;
         const rank = await computeUserRank(user.username, windowSize);
-        const mastery = computeMastery(user.lastCompletedLevel || 0, rank.median);
+        const totalXp = await computeUserTotalXp(user.username);
+        const mastery = computeMastery(user.lastCompletedLevel || 0, totalXp);
         res.send({ ...rank, mastery });
     } catch (error) {
         console.log("[ERROR] /user/rank " + error);

@@ -128,7 +128,7 @@
                 <thead>
                     <tr>
                         <th>Utilisateur</th>
-                        <th>Dernier niveau complété</th>
+                        <th>Avancement</th>
                         <th>Rang global</th>
                         <th>Maîtrise</th>
                         <th>Nouveau mot de passe</th>
@@ -141,15 +141,25 @@
             const tbody = table.querySelector('tbody');
             usersProgress.forEach(user => {
                 const tr = document.createElement('tr');
+                const totalLevels = (user.mastery && user.mastery.totalLevels) || 42;
+                const progressPct = (user.mastery && user.mastery.progressPct) || Math.round(((user.lastCompletedLevel || 0) / totalLevels) * 100);
+                const progressCell = `
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span class="player-progress" style="display:inline-flex;"><span>Niv.</span> <b>${escapeHtml(user.lastCompletedLevel)}</b><span>/${escapeHtml(totalLevels)}</span></span>
+                        <span class="progress-bar" title="${escapeHtml(progressPct)}% du parcours">
+                            <span class="progress-bar-fill" style="width:${escapeHtml(progressPct)}%;"></span>
+                        </span>
+                    </div>
+                `;
                 const rankCell = (user.rankSample && user.rankSample > 0)
-                    ? `<span class="player-rank" title="Médiane ${escapeHtml(user.medianXp)} XP sur ${escapeHtml(user.rankSample)} niveau${user.rankSample > 1 ? 'x' : ''}"><b>${escapeHtml(user.rank)}</b> · ${escapeHtml(user.medianXp)} XP</span>`
+                    ? `<span class="player-rank" title="Médiane ${escapeHtml(user.medianXp)} XP sur ${escapeHtml(user.rankSample)} niveau${user.rankSample > 1 ? 'x' : ''} (qualité récente)"><b>${escapeHtml(user.rank)}</b> · ${escapeHtml(user.medianXp)} XP</span>`
                     : `<span class="muted" style="font-size:0.85rem;">—</span>`;
                 const masteryCell = user.mastery
-                    ? `<span class="mastery-badge ${escapeHtml(user.mastery.color)}" title="Avancement : ${escapeHtml(user.mastery.progressPct)}% · Qualité : ${escapeHtml(user.mastery.qualityPct)}% · Score : ${escapeHtml(user.mastery.score)}%">${escapeHtml(user.mastery.name)}</span>`
+                    ? `<span class="mastery-badge ${escapeHtml(user.mastery.color)}" title="Score : ${escapeHtml(user.mastery.score)}% (${escapeHtml(user.mastery.totalXp)} / ${escapeHtml(user.mastery.maxTotalXp)} XP)&#10;Avancement : ${escapeHtml(user.mastery.completedLevels)}/${escapeHtml(user.mastery.totalLevels)} (${escapeHtml(user.mastery.progressPct)}%)&#10;Qualité moyenne : ${escapeHtml(user.mastery.avgQualityPct)}%">${escapeHtml(user.mastery.name)}</span>`
                     : `<span class="muted" style="font-size:0.85rem;">—</span>`;
                 tr.innerHTML = `
                     <td><b>${escapeHtml(user.username)}</b></td>
-                    <td><span class="player-rank" style="display:inline-flex;">Niveau <b>${escapeHtml(user.lastCompletedLevel)}</b></span></td>
+                    <td>${progressCell}</td>
                     <td>${rankCell}</td>
                     <td>${masteryCell}</td>
                     <td><input type="password" id="newPassword_${escapeHtml(user.username)}" placeholder="Nouveau mot de passe" autocomplete="new-password"></td>
