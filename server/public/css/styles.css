@@ -744,6 +744,52 @@ canvas#maze {
 .badge.Or       { background: linear-gradient(135deg, #f4d35e, #d4af37); color: #3a2a00; text-shadow: none; }
 .badge.Platine  { background: linear-gradient(135deg, #5dd9c8, #2bbbad); }
 
+/* Pastille de maîtrise (compétence globale) */
+.mastery-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 12px;
+    border-radius: var(--r-full);
+    font-size: 0.82rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+.mastery-badge::before {
+    content: '';
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+[data-theme="dark"] .mastery-badge::before {
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
+}
+.mastery-badge.red {
+    color: var(--danger);
+    background: var(--danger-soft);
+    border-color: rgba(239, 68, 68, 0.25);
+}
+.mastery-badge.amber {
+    color: var(--warning);
+    background: var(--warning-soft);
+    border-color: rgba(245, 158, 11, 0.25);
+}
+.mastery-badge.blue {
+    color: var(--primary);
+    background: var(--primary-soft);
+    border-color: rgba(99, 102, 241, 0.25);
+}
+.mastery-badge.green {
+    color: var(--success);
+    background: var(--success-soft);
+    border-color: rgba(16, 185, 129, 0.25);
+}
+
 /* Rang global dans le header */
 .player-rank {
     display: inline-flex;
@@ -1021,7 +1067,7 @@ canvas#maze {
     .game-layout { grid-template-columns: 1fr; }
     .game-sidebar { position: static; }
     .level-list { max-height: 200px; }
-    .player-rank {
+    .player-rank, .mastery-badge {
         font-size: 0.75rem;
         padding: 3px 8px;
     }

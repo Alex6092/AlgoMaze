@@ -3,6 +3,7 @@
 // Le rang global est calculé comme la médiane glissante des XP des N derniers niveaux.
 
 import redisClient from './redisClient.js';
+import config from './config.json' assert { type: 'json' };
 
 // Ordre de meilleur à pire pour faciliter le find().
 const BADGE_THRESHOLDS = [
@@ -64,6 +65,48 @@ export async function getUserBadges(username) {
         result[levelId] = { badge, xp: xpRaw ? parseInt(xpRaw) : 0 };
     }
     return result;
+}
+
+// Maîtrise globale = dimension limitante entre l'avancement (lastCompletedLevel / totalLevels)
+// et la qualité (médiane XP / 200, où 200 = Platine = qualité max).
+// Quatre paliers configurables via config.json (masteryThresholds, en %).
+const MASTERY_LEVELS = {
+    tresBonne:    { name: 'Très bonne maîtrise',  color: 'green' },
+    satisfaisante:{ name: 'Maîtrise satisfaisante', color: 'blue' },
+    fragile:      { name: 'Maîtrise fragile',     color: 'amber' },
+    insuffisante: { name: 'Maîtrise insuffisante', color: 'red' }
+};
+
+export function computeMastery(lastCompletedLevel, medianXp) {
+    const totalLevels = (config && config.totalLevels) || 42;
+    const thresholds = (config && config.masteryThresholds) || { fragile: 20, satisfaisante: 40, tresBonne: 70 };
+
+    const safeLevel = Math.max(0, parseInt(lastCompletedLevel, 10) || 0);
+    const safeMedian = Math.max(0, parseFloat(medianXp) || 0);
+
+    // Avancement : 100 % atteint = niveau totalLevels validé. Plafonné à 100 (les niveaux bonus
+    // ne pénalisent pas et n'ajoutent pas non plus puisqu'ils sont au-delà).
+    const progressPct = Math.max(0, Math.min(100, (safeLevel / totalLevels) * 100));
+
+    // Qualité : Platine (200 XP médian) = 100 %, Or (100) = 50 %, Argent (50) = 25 %, etc.
+    const qualityPct  = Math.max(0, Math.min(100, safeMedian / 2));
+
+    // Score final = dimension limitante : il faut être bon ET avancé pour atteindre les paliers hauts.
+    const score = Math.min(progressPct, qualityPct);
+
+    let level;
+    if (score >= thresholds.tresBonne)            level = MASTERY_LEVELS.tresBonne;
+    else if (score >= thresholds.satisfaisante)   level = MASTERY_LEVELS.satisfaisante;
+    else if (score >= thresholds.fragile)         level = MASTERY_LEVELS.fragile;
+    else                                          level = MASTERY_LEVELS.insuffisante;
+
+    return {
+        name: level.name,
+        color: level.color,
+        score: Math.round(score),
+        progressPct: Math.round(progressPct),
+        qualityPct: Math.round(qualityPct)
+    };
 }
 
 // Médiane glissante des XP sur les N derniers niveaux validés (par ordre décroissant de levelId).

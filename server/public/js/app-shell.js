@@ -67,6 +67,7 @@ window.AppShell = (function() {
                     </nav>
                     <div class="app-header-actions">
                         <span class="player-rank" id="player-rank" style="display:none;"></span>
+                        <span class="mastery-badge" id="player-mastery" style="display:none;"></span>
                         <span class="muted" style="font-size:0.85rem;display:none;" id="app-username">${escapeHtml(username)}</span>
                         <button class="theme-toggle" type="button" title="Basculer le thème" aria-label="Basculer le thème">${themeIcon}</button>
                         <button class="btn btn-ghost btn-sm" id="logout-btn" type="button">Déconnexion</button>
@@ -133,14 +134,30 @@ window.AppShell = (function() {
             });
             if (!r.ok) return;
             const data = await r.json();
-            const el = document.getElementById('player-rank');
-            if (!el) return;
-            if (data.sample > 0) {
-                el.innerHTML = '<span>Rang :</span> <b>' + (data.rank || '?') + '</b>';
-                el.title = 'Médiane ' + data.median + ' XP sur ' + data.sample + ' niveau' + (data.sample > 1 ? 'x' : '');
-                el.style.display = 'inline-flex';
-            } else {
-                el.style.display = 'none';
+
+            // Pill rang : visible uniquement quand l'étudiant a au moins une évaluation IA.
+            const rankEl = document.getElementById('player-rank');
+            if (rankEl) {
+                if (data.sample > 0) {
+                    rankEl.innerHTML = '<span>Rang :</span> <b>' + (data.rank || '?') + '</b>';
+                    rankEl.title = 'Médiane ' + data.median + ' XP sur ' + data.sample + ' niveau' + (data.sample > 1 ? 'x' : '');
+                    rankEl.style.display = 'inline-flex';
+                } else {
+                    rankEl.style.display = 'none';
+                }
+            }
+
+            // Pastille de maîtrise : on l'affiche dès qu'on a la donnée (même si sample=0,
+            // l'étudiant peut être déjà à un niveau d'avancement non nul).
+            const masteryEl = document.getElementById('player-mastery');
+            if (masteryEl && data.mastery) {
+                const m = data.mastery;
+                masteryEl.className = 'mastery-badge ' + (m.color || 'red');
+                masteryEl.textContent = m.name;
+                masteryEl.title = 'Avancement : ' + m.progressPct + '%  ·  Qualité : ' + m.qualityPct + '%  ·  Score : ' + m.score + '%';
+                masteryEl.style.display = 'inline-flex';
+            } else if (masteryEl) {
+                masteryEl.style.display = 'none';
             }
         } catch (e) { /* silent */ }
     }

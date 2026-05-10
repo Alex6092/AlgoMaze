@@ -129,6 +129,8 @@
                     <tr>
                         <th>Utilisateur</th>
                         <th>Dernier niveau complété</th>
+                        <th>Rang global</th>
+                        <th>Maîtrise</th>
                         <th>Nouveau mot de passe</th>
                         <th style="text-align:right;">Actions</th>
                     </tr>
@@ -139,9 +141,17 @@
             const tbody = table.querySelector('tbody');
             usersProgress.forEach(user => {
                 const tr = document.createElement('tr');
+                const rankCell = (user.rankSample && user.rankSample > 0)
+                    ? `<span class="player-rank" title="Médiane ${escapeHtml(user.medianXp)} XP sur ${escapeHtml(user.rankSample)} niveau${user.rankSample > 1 ? 'x' : ''}"><b>${escapeHtml(user.rank)}</b> · ${escapeHtml(user.medianXp)} XP</span>`
+                    : `<span class="muted" style="font-size:0.85rem;">—</span>`;
+                const masteryCell = user.mastery
+                    ? `<span class="mastery-badge ${escapeHtml(user.mastery.color)}" title="Avancement : ${escapeHtml(user.mastery.progressPct)}% · Qualité : ${escapeHtml(user.mastery.qualityPct)}% · Score : ${escapeHtml(user.mastery.score)}%">${escapeHtml(user.mastery.name)}</span>`
+                    : `<span class="muted" style="font-size:0.85rem;">—</span>`;
                 tr.innerHTML = `
                     <td><b>${escapeHtml(user.username)}</b></td>
                     <td><span class="player-rank" style="display:inline-flex;">Niveau <b>${escapeHtml(user.lastCompletedLevel)}</b></span></td>
+                    <td>${rankCell}</td>
+                    <td>${masteryCell}</td>
                     <td><input type="password" id="newPassword_${escapeHtml(user.username)}" placeholder="Nouveau mot de passe" autocomplete="new-password"></td>
                     <td style="text-align:right;">
                         <button class="btn btn-secondary btn-sm" onclick="updateUserPassword('${escapeHtml(user.username)}')">Modifier</button>
