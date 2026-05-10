@@ -118,6 +118,7 @@
             const txt = (result && result.feedback) || '';
             const criteria = (result && Array.isArray(result.criteria)) ? result.criteria : [];
             const badgeName = result && result.badge;
+            const jump = result && result.qualityJump;
             let html = '<div class="feedback-block">';
             html += '<div class="fb-header">';
             html += '<span class="fb-score">' + escapeHtml(score) + '/100</span>';
@@ -126,6 +127,9 @@
             }
             html += '<span class="fb-badge ' + (respected ? 'ok' : 'ko') + '">'
                  + (respected ? 'Contraintes respectées' : 'Contraintes non respectées') + '</span>';
+            if (jump && jump.jump) {
+                html += '<span class="quality-jump-flag" title="Score nettement supérieur à la médiane de l\'élève (' + jump.baselineMedian + ' XP) — à examiner.">⚠️ Saut de qualité +' + jump.delta + ' XP</span>';
+            }
             html += '</div>';
             html += '<div class="fb-text">' + escapeHtml(txt) + '</div>';
             if (criteria.length) {
@@ -141,18 +145,32 @@
             return html;
         }
 
-        // Bloc "Signaux" (anti-triche) — données brutes, pas d'interprétation à ce stade.
-        function renderSignals(signals, label) {
+        // Bloc "Signaux" (anti-triche) — chaque signal anormal est mis en évidence.
+        function renderSignals(signals, analysis) {
             if (!signals) return '';
             const fmt = v => Number(v || 0).toLocaleString('fr-FR');
+            const f = (analysis && analysis.flags) || {};
+            const cls = key => f[key] ? 'suspect' : '';
+            const count = (analysis && analysis.suspectCount) || 0;
+
+            let summary = '';
+            if (count === 0) {
+                summary = '<span class="signals-summary clean">✓ Aucun signal suspect</span>';
+            } else if (count === 1) {
+                summary = '<span class="signals-summary warn">⚠️ 1 signal suspect</span>';
+            } else {
+                summary = '<span class="signals-summary alert">⚠️ ' + count + ' signaux suspects</span>';
+            }
+            const pasteRatioPct = analysis ? Math.round((analysis.pasteRatio || 0) * 100) : 0;
+
             return `
                 <div class="signals-block">
-                    <h4>${escapeHtml(label || 'Signaux de session')}</h4>
+                    <h4>Signaux de session ${summary}</h4>
                     <div class="signals-grid">
-                        <div><span class="label">Onglet caché :</span> <b>${fmt(signals.tabSwitchCount)}×</b> (${fmt(signals.awaySeconds)}s)</div>
-                        <div><span class="label">Perte de focus :</span> <b>${fmt(signals.focusLossCount)}×</b> (${fmt(signals.focusLossSeconds)}s)</div>
-                        <div><span class="label">Capture suspectée :</span> <b>${fmt(signals.printScreenCount)}×</b></div>
-                        <div><span class="label">Coller :</span> <b>${fmt(signals.pasteCount)}×</b> (${fmt(signals.pasteChars)} car.)</div>
+                        <div class="${cls('away')}"><span class="label">Onglet caché :</span> <b>${fmt(signals.tabSwitchCount)}×</b> (${fmt(signals.awaySeconds)}s)</div>
+                        <div class="${cls('focus')}"><span class="label">Perte de focus :</span> <b>${fmt(signals.focusLossCount)}×</b> (${fmt(signals.focusLossSeconds)}s)</div>
+                        <div class="${cls('capture')}"><span class="label">Capture suspectée :</span> <b>${fmt(signals.printScreenCount)}×</b></div>
+                        <div class="${cls('paste')}"><span class="label">Coller :</span> <b>${fmt(signals.pasteCount)}×</b> (${fmt(signals.pasteChars)} car., ratio ${pasteRatioPct}%)</div>
                         <div><span class="label">Durée session :</span> <b>${fmt(signals.sessionSeconds)}s</b></div>
                     </div>
                 </div>
@@ -184,7 +202,7 @@
                     <h3>Niveau ${entry.levelId}</h3>
                     <pre>${escapeHtml(entry.code)}</pre>
                     ${renderFeedback(entry.feedbackStatus, entry.feedbackResult)}
-                    ${renderSignals(entry.sessionSignals)}
+                    ${renderSignals(entry.sessionSignals, entry.signalsAnalysis)}
                     <details>
                         <summary>Historique (${entry.history.length})</summary>
                         ${renderHistory(entry.history)}
@@ -202,13 +220,55 @@
                     <h3>${escapeHtml(entry.username)}</h3>
                     <pre>${escapeHtml(entry.code)}</pre>
                     ${renderFeedback(entry.feedbackStatus, entry.feedbackResult)}
-                    ${renderSignals(entry.sessionSignals)}
+                    ${renderSignals(entry.sessionSignals, entry.signalsAnalysis)}
                     <details>
                         <summary>Historique (${entry.history.length})</summary>
                         ${renderHistory(entry.history)}
                     </details>
                 </div>
             `).join('');
+        }
+
+        function renderSimilarityPanel(analysis) {
+            if (!analysis || analysis.sampleSize < 2) {
+                return '';
+            }
+            const baselinePct = Math.round((analysis.baseline || 0) * 100);
+            const cutoffPct = Math.round((analysis.cutoff || 0) * 100);
+            const pairs = analysis.suspectPairs || [];
+            let inner;
+            if (!pairs.length) {
+                inner = '<div class="muted" style="font-size:0.9rem;">Aucune paire suspecte détectée pour ce niveau.</div>';
+            } else {
+                inner = pairs.map(p => `
+                    <div class="similarity-pair">
+                        <span class="pair-users">${escapeHtml(p.userA)} ↔ ${escapeHtml(p.userB)}</span>
+                        <span class="pair-score">${Math.round(p.similarity * 100)}%</span>
+                    </div>
+                `).join('');
+            }
+            return `
+                <div class="similarity-panel">
+                    <h3>🔍 Analyse de similarité</h3>
+                    <div class="baseline-info">
+                        ${analysis.sampleSize} solution${analysis.sampleSize > 1 ? 's' : ''} comparée${analysis.sampleSize > 1 ? 's' : ''}.
+                        Similarité moyenne du niveau : <b>${baselinePct}%</b> · Seuil de signalement : <b>${cutoffPct}%</b>.
+                    </div>
+                    ${inner}
+                </div>
+            `;
+        }
+
+        async function fetchSimilarity(levelId) {
+            const token = localStorage.getItem('token');
+            try {
+                const r = await fetch(`/admin/similarity/level/${encodeURIComponent(levelId)}`, {
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    credentials: 'include'
+                });
+                if (!r.ok) return null;
+                return await r.json();
+            } catch (e) { return null; }
         }
 
         async function loadSolutions() {
@@ -233,7 +293,15 @@
                 });
                 if (!response.ok) throw new Error('Erreur ' + response.status);
                 const data = await response.json();
-                container.innerHTML = mode === 'user' ? renderUserSolutions(data) : renderLevelSolutions(data);
+
+                // En mode niveau : on ajoute en tête le panneau d'analyse de similarité.
+                let header = '';
+                if (mode === 'level') {
+                    const sim = await fetchSimilarity(target);
+                    header = renderSimilarityPanel(sim);
+                }
+
+                container.innerHTML = header + (mode === 'user' ? renderUserSolutions(data) : renderLevelSolutions(data));
             } catch (err) {
                 container.innerHTML = '';
                 showNotification('Erreur lors du chargement : ' + err.message, 'error');

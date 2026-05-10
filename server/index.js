@@ -16,6 +16,7 @@ import { generateToken, verifyToken, userFromToken, slidingRefresh } from './jwt
 import config from './config.json' assert { type: 'json' };
 import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
 import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp } from './badges.js';
+import { interpretSignals, analyzeLevelSimilarity } from './cheatDetection.js';
 const app = express();
 app.use(express.json());
 app.use(cors({
@@ -533,7 +534,8 @@ app.get('/admin/solutions/user/:username', async (req, res) => {
             const feedbackStatus = await getFeedbackStatus(username, levelId);
             const feedbackResult = await getFeedbackResult(username, levelId);
             const sessionSignals = await loadSessionSignals(username, levelId);
-            result.push({ levelId, code, history, feedbackStatus, feedbackResult, sessionSignals });
+            const signalsAnalysis = interpretSignals(sessionSignals, code ? code.length : 0);
+            result.push({ levelId, code, history, feedbackStatus, feedbackResult, sessionSignals, signalsAnalysis });
         }
         result.sort((a, b) => a.levelId - b.levelId);
         res.send(result);
@@ -565,13 +567,35 @@ app.get('/admin/solutions/level/:levelId', async (req, res) => {
             const feedbackStatus = await getFeedbackStatus(username, levelId);
             const feedbackResult = await getFeedbackResult(username, levelId);
             const sessionSignals = await loadSessionSignals(username, levelId);
-            result.push({ username, code, history, feedbackStatus, feedbackResult, sessionSignals });
+            const signalsAnalysis = interpretSignals(sessionSignals, code ? code.length : 0);
+            result.push({ username, code, history, feedbackStatus, feedbackResult, sessionSignals, signalsAnalysis });
         }
         result.sort((a, b) => a.username.localeCompare(b.username));
         res.send(result);
     } catch (error) {
         console.log("[ERROR] /admin/solutions/level/:levelId " + error);
         res.status(500).send({ error: 'Failed to fetch solutions' });
+    }
+});
+
+// Vue admin : analyse de similarité inter-élèves pour un niveau donné.
+// Renvoie la baseline (similarité moyenne du cohorte sur ce niveau) et la liste
+// des paires d'élèves dont les solutions sont anormalement proches — utile pour
+// repérer les copies sans flag automatique des niveaux contraints (où toutes
+// les solutions se ressemblent légitimement).
+app.get('/admin/similarity/level/:levelId', async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const adminUser = await userFromToken(token);
+        if (!adminUser.isAdmin) {
+            return res.status(403).send({ error: 'You are not an administrator' });
+        }
+        const levelId = parseInt(req.params.levelId);
+        const analysis = await analyzeLevelSimilarity(levelId);
+        res.send(analysis);
+    } catch (error) {
+        console.log("[ERROR] /admin/similarity/level/:levelId " + error);
+        res.status(500).send({ error: 'Failed to analyze similarity' });
     }
 });
 

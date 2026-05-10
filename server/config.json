@@ -7,5 +7,16 @@
         "fragile": 20,
         "satisfaisante": 40,
         "tresBonne": 70
+    },
+    "cheatDetection": {
+        "qualityJumpDelta": 30,
+        "qualityJumpMinSample": 3,
+        "pasteRatioThreshold": 0.7,
+        "awaySecondsThreshold": 60,
+        "focusLossThreshold": 5,
+        "printScreenThreshold": 1,
+        "similarityThreshold": 0.85,
+        "similarityBaselineMargin": 0.15,
+        "similarityMinPairs": 3
     }
 }
