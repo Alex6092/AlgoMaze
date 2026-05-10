@@ -15,7 +15,7 @@ import { __dirname } from './utils.js';
 import { generateToken, verifyToken, userFromToken, slidingRefresh } from './jwtConfig.js';
 import config from './config.json' assert { type: 'json' };
 import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
-import { computeUserRank, getUserBadges } from './badges.js';
+import { computeUserRank, getUserBadges, computeMastery } from './badges.js';
 const app = express();
 app.use(express.json());
 app.use(cors({
@@ -474,6 +474,7 @@ app.get('/userprogressreport', async (req, res) => {
 
         if(user.isAdmin)
         {
+            const windowSize = (config && config.slidingMedianWindow) || 10;
             var userKeys = await redisClient.keys("user:*");
 
             var result = [];
@@ -481,9 +482,16 @@ app.get('/userprogressreport', async (req, res) => {
             {
                 var userData = await redisClient.get(userKey);
                 userData = JSON.parse(userData);
+                // Rang global = médiane glissante des XP des derniers niveaux validés.
+                const rankInfo = await computeUserRank(userData.username, windowSize);
+                const mastery = computeMastery(userData.lastCompletedLevel || 0, rankInfo.median);
                 result.push({
                     username: userData.username,
-                    lastCompletedLevel: userData.lastCompletedLevel
+                    lastCompletedLevel: userData.lastCompletedLevel,
+                    rank: rankInfo.rank,
+                    medianXp: rankInfo.median,
+                    rankSample: rankInfo.sample,
+                    mastery
                 });
             }
 
@@ -585,14 +593,17 @@ app.post('/check_completion', async (req, res) => {
     }
 });
 
-// Rang global de l'utilisateur courant : médiane glissante des XP des derniers niveaux.
+// Rang global + niveau de maîtrise de l'utilisateur courant.
+// rang = médiane glissante des XP des derniers niveaux (qualité)
+// maîtrise = dimension limitante entre avancement (lastCompletedLevel/totalLevels) et qualité.
 app.get('/user/rank', async (req, res) => {
     try {
         const token = req.headers.authorization.split(" ")[1];
         const user = await userFromToken(token);
         const windowSize = (config && config.slidingMedianWindow) || 10;
         const rank = await computeUserRank(user.username, windowSize);
-        res.send(rank);
+        const mastery = computeMastery(user.lastCompletedLevel || 0, rank.median);
+        res.send({ ...rank, mastery });
     } catch (error) {
         console.log("[ERROR] /user/rank " + error);
         res.status(500).send({ error: 'Failed to compute rank' });

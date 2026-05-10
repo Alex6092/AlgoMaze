@@ -1,5 +1,11 @@
 {
     "allowRegistration": true,
     "maxSolutionHistory": 10,
-    "slidingMedianWindow": 10
+    "slidingMedianWindow": 10,
+    "totalLevels": 42,
+    "masteryThresholds": {
+        "fragile": 20,
+        "satisfaisante": 40,
+        "tresBonne": 70
+    }
 }
