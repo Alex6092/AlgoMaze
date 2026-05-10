@@ -744,6 +744,40 @@ canvas#maze {
 .badge.Or       { background: linear-gradient(135deg, #f4d35e, #d4af37); color: #3a2a00; text-shadow: none; }
 .badge.Platine  { background: linear-gradient(135deg, #5dd9c8, #2bbbad); }
 
+/* Pill d'avancement (Niv X/42) — visuellement neutre pour ne pas voler la vedette à la maîtrise */
+.player-progress {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface-hover);
+    color: var(--text);
+    padding: 5px 12px;
+    border-radius: var(--r-full);
+    font-size: 0.82rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+}
+.player-progress b { font-weight: 700; }
+
+/* Barre de progression linéaire — utilisée dans la vue admin */
+.progress-bar {
+    width: 120px;
+    height: 6px;
+    background: var(--surface-hover);
+    border-radius: var(--r-full);
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 8px;
+}
+.progress-bar-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: var(--r-full);
+    transition: width 0.3s ease;
+}
+
 /* Pastille de maîtrise (compétence globale) */
 .mastery-badge {
     display: inline-flex;
@@ -1067,7 +1101,7 @@ canvas#maze {
     .game-layout { grid-template-columns: 1fr; }
     .game-sidebar { position: static; }
     .level-list { max-height: 200px; }
-    .player-rank, .mastery-badge {
+    .player-rank, .mastery-badge, .player-progress {
         font-size: 0.75rem;
         padding: 3px 8px;
     }
