@@ -141,6 +141,24 @@
             return html;
         }
 
+        // Bloc "Signaux" (anti-triche) — données brutes, pas d'interprétation à ce stade.
+        function renderSignals(signals, label) {
+            if (!signals) return '';
+            const fmt = v => Number(v || 0).toLocaleString('fr-FR');
+            return `
+                <div class="signals-block">
+                    <h4>${escapeHtml(label || 'Signaux de session')}</h4>
+                    <div class="signals-grid">
+                        <div><span class="label">Onglet caché :</span> <b>${fmt(signals.tabSwitchCount)}×</b> (${fmt(signals.awaySeconds)}s)</div>
+                        <div><span class="label">Perte de focus :</span> <b>${fmt(signals.focusLossCount)}×</b> (${fmt(signals.focusLossSeconds)}s)</div>
+                        <div><span class="label">Capture suspectée :</span> <b>${fmt(signals.printScreenCount)}×</b></div>
+                        <div><span class="label">Coller :</span> <b>${fmt(signals.pasteCount)}×</b> (${fmt(signals.pasteChars)} car.)</div>
+                        <div><span class="label">Durée session :</span> <b>${fmt(signals.sessionSeconds)}s</b></div>
+                    </div>
+                </div>
+            `;
+        }
+
         function renderHistory(history) {
             if (!history || !history.length) {
                 return '<p class="muted" style="margin:6px 0;">Aucun historique</p>';
@@ -166,6 +184,7 @@
                     <h3>Niveau ${entry.levelId}</h3>
                     <pre>${escapeHtml(entry.code)}</pre>
                     ${renderFeedback(entry.feedbackStatus, entry.feedbackResult)}
+                    ${renderSignals(entry.sessionSignals)}
                     <details>
                         <summary>Historique (${entry.history.length})</summary>
                         ${renderHistory(entry.history)}
@@ -183,6 +202,7 @@
                     <h3>${escapeHtml(entry.username)}</h3>
                     <pre>${escapeHtml(entry.code)}</pre>
                     ${renderFeedback(entry.feedbackStatus, entry.feedbackResult)}
+                    ${renderSignals(entry.sessionSignals)}
                     <details>
                         <summary>Historique (${entry.history.length})</summary>
                         ${renderHistory(entry.history)}
