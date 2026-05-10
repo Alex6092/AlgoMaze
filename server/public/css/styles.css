@@ -838,6 +838,21 @@ canvas#maze {
 }
 .player-rank b { font-weight: 700; }
 
+/* ---------- Footer privacy (discret, en pied de page) ---------- */
+.app-footer {
+    max-width: var(--container-max);
+    margin: 32px auto 16px;
+    padding: 0 24px;
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--text-subtle);
+    line-height: 1.5;
+}
+.app-footer a {
+    color: var(--text-muted);
+    text-decoration: underline;
+}
+
 /* ---------- Notifications ---------- */
 #notification-container {
     position: fixed;
@@ -972,6 +987,34 @@ canvas#maze {
 }
 .fb-criterion.met { border-left-color: var(--success); }
 .fb-criterion.unmet { border-left-color: var(--danger); }
+
+/* Bloc signaux (anti-triche, données brutes) */
+.signals-block {
+    margin-top: 10px;
+    padding: 10px 14px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    font-size: 0.88rem;
+}
+.signals-block h4 {
+    margin: 0 0 8px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.signals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 4px 16px;
+}
+.signals-grid > div {
+    color: var(--text);
+}
+.signals-grid b { font-weight: 600; color: var(--text); }
+.signals-grid .label { color: var(--text-muted); font-size: 0.82rem; margin-right: 4px; }
 
 .empty-state {
     color: var(--text-muted);

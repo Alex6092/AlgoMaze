@@ -79,6 +79,12 @@
             </div>
         </main>
 
+        <footer class="app-footer">
+            Ton activité sur la plateforme (avancement, code soumis, comportement de session)
+            est enregistrée à des fins pédagogiques pour permettre à ton enseignant de t'accompagner
+            et d'évaluer ton parcours.
+        </footer>
+
         <div id="notification-container"></div>
 
         <script>
@@ -188,12 +194,82 @@
                 } catch (err) { return null; }
             }
 
+            // ----- Tracking comportemental (anti-triche) -----
+            // Compteurs cumulés sur la session du niveau courant (reset à chaque loadLevel).
+            // Envoyés au serveur lors de /precheck et /checkanswer pour aider l'enseignant
+            // à repérer un comportement anormal.
+            let signals = freshSignals();
+            let _focusLostAt = null;
+            let _hiddenStartAt = null;
+            function freshSignals() {
+                return {
+                    startedAt: Date.now(),
+                    pasteCount: 0,
+                    pasteChars: 0,
+                    tabSwitchCount: 0,      // # de fois où l'onglet est devenu caché
+                    awaySeconds: 0,         // temps cumulé en arrière-plan
+                    focusLossCount: 0,      // # de pertes de focus de la fenêtre
+                    focusLossSeconds: 0,    // temps cumulé sans focus fenêtre
+                    printScreenCount: 0     // PrintScreen / Ctrl+P / Ctrl+Shift+S
+                };
+            }
+            function snapshotSignals() {
+                // Inclut les durées en cours si l'étudiant est encore parti au moment du submit.
+                const out = { ...signals };
+                if (_focusLostAt) out.focusLossSeconds += Math.floor((Date.now() - _focusLostAt) / 1000);
+                if (_hiddenStartAt) out.awaySeconds += Math.floor((Date.now() - _hiddenStartAt) / 1000);
+                out.sessionSeconds = Math.floor((Date.now() - signals.startedAt) / 1000);
+                return out;
+            }
+
             document.addEventListener("DOMContentLoaded", async function() {
                 const token = localStorage.getItem('token');
                 editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
                     lineNumbers: true,
                     mode: "javascript",
                     theme: "default"
+                });
+
+                // Listener "paste" : CodeMirror étiquette les changements provenant d'un coller.
+                editor.on('change', (cm, change) => {
+                    if (change && change.origin === 'paste') {
+                        const text = (change.text || []).join('\n');
+                        signals.pasteCount++;
+                        signals.pasteChars += text.length;
+                    }
+                });
+
+                // Onglet caché / visible (Ctrl+Tab, switch app, minimisation…).
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) {
+                        signals.tabSwitchCount++;
+                        _hiddenStartAt = Date.now();
+                    } else if (_hiddenStartAt) {
+                        signals.awaySeconds += Math.floor((Date.now() - _hiddenStartAt) / 1000);
+                        _hiddenStartAt = null;
+                    }
+                });
+
+                // Perte / reprise de focus de la fenêtre (clic dans une autre app sans changer d'onglet).
+                window.addEventListener('blur', () => {
+                    if (!_focusLostAt) {
+                        _focusLostAt = Date.now();
+                        signals.focusLossCount++;
+                    }
+                });
+                window.addEventListener('focus', () => {
+                    if (_focusLostAt) {
+                        signals.focusLossSeconds += Math.floor((Date.now() - _focusLostAt) / 1000);
+                        _focusLostAt = null;
+                    }
+                });
+
+                // Tentatives de capture (PrintScreen / Ctrl+P / Ctrl+Shift+S).
+                // Note : sur macOS, les raccourcis OS (⌘+Shift+3/4/5) sont interceptés avant le navigateur.
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'PrintScreen') { signals.printScreenCount++; return; }
+                    if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) { signals.printScreenCount++; return; }
+                    if (e.ctrlKey && e.shiftKey && (e.key === 's' || e.key === 'S')) { signals.printScreenCount++; return; }
                 });
 
                 // Connexion socket.io pour recevoir les feedbacks IA en push.
@@ -241,7 +317,7 @@
                                     'Content-Type': 'application/json',
                                     'Authorization': 'Bearer ' + token
                                 },
-                                body: JSON.stringify({ levelId, code }),
+                                body: JSON.stringify({ levelId, code, signals: snapshotSignals() }),
                                 credentials: 'include'
                             });
                             let outcome = await response.json();
@@ -278,7 +354,7 @@
                                 'Content-Type': 'application/json',
                                 'Authorization': 'Bearer ' + token
                             },
-                            body: JSON.stringify({ levelId, code }),
+                            body: JSON.stringify({ levelId, code, signals: snapshotSignals() }),
                             credentials: 'include'
                         });
 
@@ -376,6 +452,10 @@
                 async function loadLevel(levelId, token) {
                     document.getElementById('next-level-button').classList.remove('visible');
                     displayFeedback(null, null);
+                    // Reset des signaux comportementaux pour la nouvelle session de niveau.
+                    signals = freshSignals();
+                    _focusLostAt = null;
+                    _hiddenStartAt = null;
                     try {
                         let response = await fetch(`/level/${levelId}`, {
                             headers: { 'Authorization': 'Bearer ' + token },

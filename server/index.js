@@ -329,7 +329,7 @@ app.get('/level/:uid/usersolution', async (req, res) => {
 app.post('/checkanswer', async (req, res) => {
 
     try {
-        const { levelId, code } = req.body;
+        const { levelId, code, signals } = req.body;
         const token = req.headers.authorization.split(" ")[1];
         const user = await userFromToken(token);
 
@@ -351,7 +351,8 @@ app.post('/checkanswer', async (req, res) => {
 
             // Sauvegarde systématique de la dernière tentative (valide ou non) et de l'historique.
             await redisClient.set('usersolution:'+ user.username + ':level:' + levelId, code);
-            await saveSolutionToHistory(user.username, levelId, code, result, 'check');
+            await saveSolutionToHistory(user.username, levelId, code, result, 'check', signals);
+            await saveSessionSignals(user.username, levelId, signals);
 
             if(result && levelId > user.lastCompletedLevel)
             {
@@ -393,7 +394,7 @@ app.post('/checkanswer', async (req, res) => {
 // Retourne { ok, timeout, error }.
 app.post('/precheck', async (req, res) => {
     try {
-        const { levelId, code } = req.body;
+        const { levelId, code, signals } = req.body;
         const token = req.headers.authorization.split(" ")[1];
         const user = await userFromToken(token);
 
@@ -404,7 +405,8 @@ app.post('/precheck', async (req, res) => {
 
             // Sauvegarde la dernière version du code + entrée dans l'historique.
             await redisClient.set('usersolution:'+ user.username + ':level:' + levelId, code);
-            await saveSolutionToHistory(user.username, levelId, code, outcome.ok, 'run');
+            await saveSolutionToHistory(user.username, levelId, code, outcome.ok, 'run', signals);
+            await saveSessionSignals(user.username, levelId, signals);
 
             res.send(outcome);
         }
@@ -530,7 +532,8 @@ app.get('/admin/solutions/user/:username', async (req, res) => {
             const history = historyRaw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(x => x);
             const feedbackStatus = await getFeedbackStatus(username, levelId);
             const feedbackResult = await getFeedbackResult(username, levelId);
-            result.push({ levelId, code, history, feedbackStatus, feedbackResult });
+            const sessionSignals = await loadSessionSignals(username, levelId);
+            result.push({ levelId, code, history, feedbackStatus, feedbackResult, sessionSignals });
         }
         result.sort((a, b) => a.levelId - b.levelId);
         res.send(result);
@@ -561,7 +564,8 @@ app.get('/admin/solutions/level/:levelId', async (req, res) => {
             const history = historyRaw.map(s => { try { return JSON.parse(s); } catch (e) { return null; } }).filter(x => x);
             const feedbackStatus = await getFeedbackStatus(username, levelId);
             const feedbackResult = await getFeedbackResult(username, levelId);
-            result.push({ username, code, history, feedbackStatus, feedbackResult });
+            const sessionSignals = await loadSessionSignals(username, levelId);
+            result.push({ username, code, history, feedbackStatus, feedbackResult, sessionSignals });
         }
         result.sort((a, b) => a.username.localeCompare(b.username));
         res.send(result);
@@ -714,18 +718,58 @@ function tryRunUserCode(levelData, code)
 
 // Pousse une entrée dans l'historique horodaté du code de l'utilisateur pour un niveau donné.
 // On garde au plus config.maxSolutionHistory entrées (les plus récentes en tête de liste).
-async function saveSolutionToHistory(username, levelId, code, valid, runType)
+async function saveSolutionToHistory(username, levelId, code, valid, runType, signals)
 {
     const key = `solutionhistory:${username}:level:${levelId}`;
     const entry = JSON.stringify({
         code,
         timestamp: Date.now(),
         valid: !!valid,
-        runType // 'run' (précheck) ou 'check' (validation)
+        runType, // 'run' (précheck) ou 'check' (validation)
+        signals: sanitizeSignals(signals)
     });
     await redisClient.lPush(key, entry);
     const maxHistory = (config && config.maxSolutionHistory) || 10;
     await redisClient.lTrim(key, 0, maxHistory - 1);
+}
+
+// Stocke les signaux de la dernière session pour ce (user, level) — toujours écrasés.
+// Utile pour la vue admin qui veut voir d'un coup d'œil l'état "courant".
+async function saveSessionSignals(username, levelId, signals)
+{
+    const cleaned = sanitizeSignals(signals);
+    if (!cleaned) return;
+    await redisClient.set(`signals:${username}:${levelId}`, JSON.stringify(cleaned));
+}
+
+async function loadSessionSignals(username, levelId)
+{
+    const raw = await redisClient.get(`signals:${username}:${levelId}`);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+// Filtre / coerce les signaux côté client (qui ne sont pas de confiance) en valeurs sûres.
+// On rejette tout autre champ que ceux attendus, et on borne les valeurs.
+function sanitizeSignals(raw)
+{
+    if (!raw || typeof raw !== 'object') return null;
+    const num = (v, max) => {
+        const n = Number(v);
+        if (!isFinite(n) || n < 0) return 0;
+        return Math.min(Math.floor(n), max);
+    };
+    return {
+        startedAt: num(raw.startedAt, Date.now() + 1),
+        sessionSeconds: num(raw.sessionSeconds, 24 * 3600),
+        pasteCount: num(raw.pasteCount, 100000),
+        pasteChars: num(raw.pasteChars, 10000000),
+        tabSwitchCount: num(raw.tabSwitchCount, 100000),
+        awaySeconds: num(raw.awaySeconds, 24 * 3600),
+        focusLossCount: num(raw.focusLossCount, 100000),
+        focusLossSeconds: num(raw.focusLossSeconds, 24 * 3600),
+        printScreenCount: num(raw.printScreenCount, 100000)
+    };
 }
 
 async function saveLevel(data, lvlId)
