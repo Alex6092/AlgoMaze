@@ -206,6 +206,7 @@
                     startedAt: Date.now(),
                     pasteCount: 0,
                     pasteChars: 0,
+                    imagePasteCount: 0,     // # de paste contenant une image (capture d'écran collée sur la page)
                     tabSwitchCount: 0,      // # de fois où l'onglet est devenu caché
                     awaySeconds: 0,         // temps cumulé en arrière-plan
                     focusLossCount: 0,      // # de pertes de focus de la fenêtre
@@ -266,10 +267,22 @@
 
                 // Tentatives de capture (PrintScreen / Ctrl+P / Ctrl+Shift+S).
                 // Note : sur macOS, les raccourcis OS (⌘+Shift+3/4/5) sont interceptés avant le navigateur.
+                // Idem Shift+Win+S sur Windows : capturé par l'OS, jamais visible côté JS.
                 document.addEventListener('keydown', (e) => {
                     if (e.key === 'PrintScreen') { signals.printScreenCount++; return; }
                     if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) { signals.printScreenCount++; return; }
                     if (e.ctrlKey && e.shiftKey && (e.key === 's' || e.key === 'S')) { signals.printScreenCount++; return; }
+                });
+
+                // Détection d'image collée n'importe où sur la page : si l'étudiant
+                // colle une capture d'écran (par mégarde ou non), on incrémente.
+                // Complète printScreenCount qui est aveugle à Shift+Win+S.
+                document.addEventListener('paste', (e) => {
+                    if (!e.clipboardData) return;
+                    const types = Array.from(e.clipboardData.types || []);
+                    const hasImage = types.some(t => t.startsWith('image/'))
+                                  || (e.clipboardData.files && e.clipboardData.files.length > 0);
+                    if (hasImage) signals.imagePasteCount++;
                 });
 
                 // Connexion socket.io pour recevoir les feedbacks IA en push.

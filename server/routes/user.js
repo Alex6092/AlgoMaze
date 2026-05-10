@@ -160,14 +160,36 @@ router.delete('/delete', async(req, res) => {
                 deletedUserData = JSON.parse(deletedUserData);
                 if(!deletedUserData.isAdmin)
                 {
-                    await redisClient.del('user:' + username);
-                    var toDeleteKeys = await redisClient.keys('usersolution:' + username + ':*');
-                    for(var key of toDeleteKeys)
-                    {
-                        await redisClient.del(key);
+                    // Nettoyage complet de toutes les clés Redis liées à cet utilisateur.
+                    // Inclut : compte, solutions, historique, feedbacks IA, signaux comportementaux,
+                    // badges, XP. Si on rate des clés, un compte recréé avec le même username
+                    // hériterait silencieusement des données de l'ancien.
+                    const patterns = [
+                        'user:' + username,
+                        'usersolution:' + username + ':*',
+                        'solutionhistory:' + username + ':*',
+                        'feedback:status:' + username + ':*',
+                        'feedback:result:' + username + ':*',
+                        'signals:' + username + ':*',
+                        'badge:' + username + ':*',
+                        'xp:' + username + ':*'
+                    ];
+                    let totalDeleted = 0;
+                    for (const pattern of patterns) {
+                        if (pattern.includes('*')) {
+                            const keys = await redisClient.keys(pattern);
+                            for (const key of keys) {
+                                await redisClient.del(key);
+                                totalDeleted++;
+                            }
+                        } else {
+                            const existed = await redisClient.del(pattern);
+                            totalDeleted += existed;
+                        }
                     }
+                    console.log('[user/delete] ' + username + ' purged : ' + totalDeleted + ' clé(s) Redis supprimée(s)');
 
-                    res.send({ user: userToDelete.username, status: 'User deleted successfully' });
+                    res.send({ user: userToDelete.username, status: 'User deleted successfully', keysRemoved: totalDeleted });
                 }
                 else
                 {

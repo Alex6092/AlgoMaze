@@ -788,6 +788,7 @@ function sanitizeSignals(raw)
         sessionSeconds: num(raw.sessionSeconds, 24 * 3600),
         pasteCount: num(raw.pasteCount, 100000),
         pasteChars: num(raw.pasteChars, 10000000),
+        imagePasteCount: num(raw.imagePasteCount, 100000),
         tabSwitchCount: num(raw.tabSwitchCount, 100000),
         awaySeconds: num(raw.awaySeconds, 24 * 3600),
         focusLossCount: num(raw.focusLossCount, 100000),
