@@ -8,6 +8,7 @@
         "satisfaisante": 40,
         "tresBonne": 70
     },
+    "enableBulkEvaluation": true,
     "cheatDetection": {
         "qualityJumpDelta": 30,
         "qualityJumpMinSample": 3,

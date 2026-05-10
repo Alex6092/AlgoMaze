@@ -19,6 +19,12 @@
         <h1 class="page-title">Avancement des utilisateurs</h1>
         <p class="page-subtitle">Suivi de la progression et gestion des comptes étudiants.</p>
 
+        <!-- Outils admin (rétro-évaluation IA des solutions sans feedback). -->
+        <div class="card" id="admin-tools-card" style="margin-bottom: 16px; display: none;">
+            <h2 class="card-title" style="margin-top:0;">Outils admin</h2>
+            <div id="bulk-eval-content"></div>
+        </div>
+
         <div class="card" style="margin-bottom: 16px;">
             <div id="userdatacontainer"></div>
         </div>
@@ -175,8 +181,83 @@
             container.appendChild(wrapper);
         }
 
+        // ----- Outils admin : rétro-évaluation IA -----
+        async function refreshBulkEvalCard() {
+            const card = document.getElementById('admin-tools-card');
+            const content = document.getElementById('bulk-eval-content');
+            const token = localStorage.getItem('token');
+            try {
+                const r = await fetch('/admin/missing-feedbacks', {
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    credentials: 'include'
+                });
+                if (!r.ok) { card.style.display = 'none'; return; }
+                const data = await r.json();
+                if (!data.enabled) {
+                    card.style.display = 'none';
+                    return;
+                }
+                card.style.display = 'block';
+                if (data.missing === 0) {
+                    content.innerHTML = `
+                        <p class="muted" style="margin:0;">
+                            ✓ Toutes les solutions stockées (${escapeHtml(data.total)}) ont déjà reçu une évaluation IA (ou en attente dans la file).
+                        </p>
+                    `;
+                } else {
+                    content.innerHTML = `
+                        <p style="margin:0 0 12px;">
+                            <b>${escapeHtml(data.missing)}</b> solution${data.missing > 1 ? 's' : ''} sur ${escapeHtml(data.total)}
+                            n'${data.missing > 1 ? 'ont' : 'a'} pas encore reçu d'évaluation IA.
+                            Le worker traite les jobs un par un, ça peut prendre du temps si LM Studio est lent.
+                        </p>
+                        <button class="btn btn-primary" id="bulk-eval-button" type="button">
+                            Lancer l'évaluation IA pour ${escapeHtml(data.missing)} solution${data.missing > 1 ? 's' : ''}
+                        </button>
+                    `;
+                    document.getElementById('bulk-eval-button').addEventListener('click', launchBulkEval);
+                }
+            } catch (e) {
+                card.style.display = 'none';
+            }
+        }
+
+        async function launchBulkEval() {
+            const btn = document.getElementById('bulk-eval-button');
+            if (!btn) return;
+            const ok = confirm(
+                "Cette action va enfiler une évaluation IA pour chaque solution non évaluée.\n" +
+                "Le worker les traitera une par une (peut être long). Continuer ?"
+            );
+            if (!ok) return;
+            const token = localStorage.getItem('token');
+            btn.disabled = true;
+            btn.textContent = 'Enfilement en cours…';
+            try {
+                const r = await fetch('/admin/bulk-evaluate', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    credentials: 'include'
+                });
+                if (!r.ok) throw new Error('Erreur ' + r.status);
+                const data = await r.json();
+                showNotification(
+                    data.enqueued + ' évaluation' + (data.enqueued > 1 ? 's' : '') + ' enfilée'
+                    + (data.enqueued > 1 ? 's' : '')
+                    + (data.invalidSkipped ? ' · ' + data.invalidSkipped + ' ignorée(s) (non fonctionnelles)' : '')
+                    + (data.errors ? ' · ' + data.errors + ' erreur(s)' : ''),
+                    'success'
+                );
+                await refreshBulkEvalCard();
+            } catch (err) {
+                showNotification('Erreur lors du lancement : ' + err.message, 'error');
+                btn.disabled = false;
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', async function() {
             await fetchUsersProgress();
+            await refreshBulkEvalCard();
         });
     </script>
 

@@ -126,14 +126,26 @@
             }
         }
 
-        function renderFeedback(status, result) {
+        function regenButtonHtml(username, levelId) {
+            if (!username || levelId == null) return '';
+            return `<button class="btn btn-secondary btn-sm regen-btn"
+                            data-regen-user="${escapeHtml(username)}"
+                            data-regen-level="${escapeHtml(levelId)}"
+                            type="button"
+                            title="Regénérer l'évaluation IA pour cette solution"
+                            style="margin-left:auto;">🔄 Regénérer</button>`;
+        }
+
+        function renderFeedback(status, result, username, levelId) {
             if (!status) return '';
             if (status === 'pending') {
-                return '<div class="feedback-block pending"><span class="fb-badge pending">Évaluation IA en cours…</span></div>';
+                return '<div class="feedback-block pending"><div class="fb-header"><span class="fb-badge pending">Évaluation IA en cours…</span></div></div>';
             }
             if (status === 'error') {
                 const msg = (result && result.error) || 'Erreur inconnue';
-                return '<div class="feedback-block error"><b>Évaluation IA en échec :</b> ' + escapeHtml(msg) + '</div>';
+                return '<div class="feedback-block error">'
+                    + '<div class="fb-header"><b>Évaluation IA en échec :</b> ' + escapeHtml(msg) + regenButtonHtml(username, levelId) + '</div>'
+                    + '</div>';
             }
             const score = (result && typeof result.score === 'number') ? result.score : '?';
             const respected = result && result.constraintsRespected;
@@ -152,6 +164,7 @@
             if (jump && jump.jump) {
                 html += '<span class="quality-jump-flag" title="Score nettement supérieur à la médiane de l\'élève (' + jump.baselineMedian + ' XP) — à examiner.">⚠️ Saut de qualité +' + jump.delta + ' XP</span>';
             }
+            html += regenButtonHtml(username, levelId);
             html += '</div>';
             html += '<div class="fb-text">' + escapeHtml(txt) + '</div>';
             if (criteria.length) {
@@ -216,7 +229,7 @@
             `).join('');
         }
 
-        function renderUserSolutions(data) {
+        function renderUserSolutions(data, targetUsername) {
             if (!data.length) {
                 return '<div class="empty-state">Aucune solution enregistrée pour cet utilisateur.</div>';
             }
@@ -224,7 +237,7 @@
                 <div class="solution-entry">
                     <h3>Niveau ${entry.levelId}</h3>
                     <pre>${escapeHtml(entry.code)}</pre>
-                    ${renderFeedback(entry.feedbackStatus, entry.feedbackResult)}
+                    ${renderFeedback(entry.feedbackStatus, entry.feedbackResult, targetUsername, entry.levelId)}
                     ${renderSignals(entry.sessionSignals, entry.signalsAnalysis)}
                     <details>
                         <summary>Historique (${entry.history.length})</summary>
@@ -234,7 +247,7 @@
             `).join('');
         }
 
-        function renderLevelSolutions(data) {
+        function renderLevelSolutions(data, targetLevelId) {
             if (!data.length) {
                 return '<div class="empty-state">Aucune solution enregistrée pour ce niveau.</div>';
             }
@@ -242,7 +255,7 @@
                 <div class="solution-entry">
                     <h3>${escapeHtml(entry.username)}</h3>
                     <pre>${escapeHtml(entry.code)}</pre>
-                    ${renderFeedback(entry.feedbackStatus, entry.feedbackResult)}
+                    ${renderFeedback(entry.feedbackStatus, entry.feedbackResult, entry.username, targetLevelId)}
                     ${renderSignals(entry.sessionSignals, entry.signalsAnalysis)}
                     <details>
                         <summary>Historique (${entry.history.length})</summary>
@@ -563,7 +576,7 @@
                     _currentLevelLabel = '';
                 }
 
-                container.innerHTML = header + (mode === 'user' ? renderUserSolutions(data) : renderLevelSolutions(data));
+                container.innerHTML = header + (mode === 'user' ? renderUserSolutions(data, target) : renderLevelSolutions(data, target));
 
                 // Une fois le panneau monté, on dessine la constellation et on branche les clics.
                 if (mode === 'level' && simAnalysis) {
@@ -578,11 +591,50 @@
             }
         }
 
+        // Délégation : clic sur n'importe quel bouton "Regénérer" dans le container
+        // déclenche un POST /admin/regenerate-feedback puis recharge la vue.
+        async function handleRegenClick(btn) {
+            const username = btn.getAttribute('data-regen-user');
+            const levelId = btn.getAttribute('data-regen-level');
+            if (!username || !levelId) return;
+            const token = localStorage.getItem('token');
+            btn.disabled = true;
+            btn.textContent = '… enfilé';
+            try {
+                const r = await fetch(`/admin/regenerate-feedback/${encodeURIComponent(username)}/${encodeURIComponent(levelId)}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    credentials: 'include'
+                });
+                const data = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                    throw new Error(data.error || 'Erreur ' + r.status);
+                }
+                showNotification('Évaluation enfilée pour ' + username + ' · niveau ' + levelId, 'success');
+                // Recharge la vue pour afficher le statut "pending".
+                await loadSolutions();
+            } catch (err) {
+                showNotification('Regénération impossible : ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '🔄 Regénérer';
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', async function() {
             document.querySelectorAll('input[name="mode"]').forEach(radio => {
                 radio.addEventListener('change', () => populateTargetSelect(radio.value));
             });
             document.getElementById('load-button').addEventListener('click', loadSolutions);
+
+            // Délégation du clic sur les boutons "Regénérer" dans la liste des solutions.
+            document.getElementById('results-container').addEventListener('click', (e) => {
+                const btn = e.target.closest('.regen-btn');
+                if (btn) {
+                    e.stopPropagation();
+                    handleRegenClick(btn);
+                }
+            });
+
             // Modale comparaison : fermeture par bouton, clic sur l'overlay, ou ESC.
             document.getElementById('diff-close').addEventListener('click', closeDiffModal);
             document.getElementById('diff-modal').addEventListener('click', (e) => {
