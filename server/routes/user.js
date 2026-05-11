@@ -3,6 +3,7 @@ const router = express.Router();
 import bcrypt from 'bcrypt';
 import { generateToken, verifyToken, userFromToken, TOKEN_COOKIE_OPTIONS, requireUser, requireAdmin } from '../jwtConfig.js';
 import { loginLimiter } from '../rateLimit.js';
+import { recordEvent as recordPresenceEvent } from '../presence.js';
 import redisClient from '../redisClient.js';
 import config from '../config.json' assert { type: 'json' };
 
@@ -113,6 +114,10 @@ router.get('/me', async (req, res) => {
         const ctx = await requireUser(req, res);
         if (!ctx) return;
         const { user } = ctx;
+        // Heartbeat pour la vue live admin : rafraîchit lastSeenAt.
+        if (!user.isAdmin) {
+            recordPresenceEvent(user.username, { type: 'heartbeat' });
+        }
         res.send({
             username: user.username,
             isAdmin: !!user.isAdmin,

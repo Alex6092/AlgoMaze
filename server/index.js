@@ -18,6 +18,7 @@ import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedback
 import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp } from './badges.js';
 import { interpretSignals, analyzeLevelSimilarity } from './cheatDetection.js';
 import { loginLimiter, checkAnswerLimiter, precheckLimiter } from './rateLimit.js';
+import { recordEvent as recordPresenceEvent, setIo as setPresenceIo, getSnapshot as getPresenceSnapshot } from './presence.js';
 const app = express();
 // Trust Apache reverse proxy : req.ip renvoie la vraie IP client (X-Forwarded-For)
 // au lieu de l'IP du proxy. Indispensable pour que le rate-limiting fonctionne par IP.
@@ -231,6 +232,25 @@ app.get('/progress', async (req, res) => {
         res.status(403).send({error: "Not authenticated"});
 });
 
+app.get('/live', async (req, res) => {
+    const token = req.cookies.token;
+    if (token) {
+        try {
+            const decoded = verifyToken(token);
+            const user = JSON.parse(await redisClient.get('user:' + decoded.userId));
+            if (user.isAdmin)
+                res.sendFile(__dirname + '/live.html');
+            else
+                res.redirect('/maze');
+        }
+        catch(error) {
+            res.status(500).send({ error: "Unexpected error" });
+        }
+    }
+    else
+        res.status(403).send({ error: "Not authenticated" });
+});
+
 app.get('/solutions', async (req, res) => {
     const token = req.cookies.token;
     if (token) {
@@ -290,8 +310,12 @@ app.get('/level/:uid', async (req, res) => {
         if (!ctx) return;
         const user = ctx.user;
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
-        {   
+        {
             var result = await loadLevel(levelId);
+            // Vue live : on note que l'étudiant a chargé ce niveau.
+            if (!user.isAdmin) {
+                recordPresenceEvent(user.username, { type: 'view-level', levelId: parseInt(levelId) });
+            }
             res.send(result);
         }
         else
@@ -362,6 +386,10 @@ app.post('/checkanswer', checkAnswerLimiter, async (req, res) => {
             await redisClient.set('usersolution:'+ user.username + ':level:' + levelId, code);
             await saveSolutionToHistory(user.username, levelId, code, result, 'check', signals);
             await saveSessionSignals(user.username, levelId, signals);
+            // Vue live : enregistre la soumission (succès / échec) pour les admins.
+            if (!user.isAdmin) {
+                recordPresenceEvent(user.username, { type: 'check', levelId: parseInt(levelId), result, signals });
+            }
 
             if(result && levelId > user.lastCompletedLevel)
             {
@@ -417,6 +445,10 @@ app.post('/precheck', precheckLimiter, async (req, res) => {
             await redisClient.set('usersolution:'+ user.username + ':level:' + levelId, code);
             await saveSolutionToHistory(user.username, levelId, code, outcome.ok, 'run', signals);
             await saveSessionSignals(user.username, levelId, signals);
+            // Vue live : enregistre l'exécution locale (signaux mis à jour).
+            if (!user.isAdmin) {
+                recordPresenceEvent(user.username, { type: 'precheck', levelId: parseInt(levelId), signals });
+            }
 
             res.send(outcome);
         }
@@ -810,6 +842,7 @@ io.use(async (socket, next) => {
         if (!token) return next(new Error('No token'));
         const user = await userFromToken(token);
         socket.data.username = user.username;
+        socket.data.isAdmin = !!user.isAdmin;
         next();
     } catch (err) {
         next(new Error('Authentication error'));
@@ -819,7 +852,27 @@ io.use(async (socket, next) => {
 io.on('connection', (socket) => {
     // Chaque utilisateur a sa propre room — on émet vers user:<username>.
     socket.join('user:' + socket.data.username);
+
+    if (socket.data.isAdmin) {
+        // Les admins rejoignent la room 'admins' et reçoivent un snapshot complet
+        // de la présence en cours dès la connexion.
+        socket.join('admins');
+        socket.emit('presence:snapshot', getPresenceSnapshot());
+    } else {
+        // Étudiant : on enregistre sa connexion pour la vue live.
+        recordPresenceEvent(socket.data.username, { type: 'connect' });
+    }
+
+    socket.on('disconnect', () => {
+        if (!socket.data.isAdmin) {
+            recordPresenceEvent(socket.data.username, { type: 'disconnect' });
+        }
+    });
 });
+
+// Injecte la référence Socket.IO dans le module presence pour qu'il puisse émettre
+// vers la room 'admins' depuis les helpers serveur (recordEvent appelé dans les routes).
+setPresenceIo(io);
 
 httpServer.listen(port, () => {
     console.log("AlgoMaze API running on port " + port);

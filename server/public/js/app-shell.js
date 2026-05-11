@@ -21,6 +21,7 @@ window.AppShell = (function() {
     ];
     const ADMIN_LINKS = [
         { href: '/maze',      label: 'Jeu',                 match: ['/maze'] },
+        { href: '/live',      label: 'Live',                match: ['/live'] },
         { href: '/progress',  label: 'Avancement',          match: ['/progress'] },
         { href: '/solutions', label: 'Solutions',           match: ['/solutions'] },
         { href: '/editor',    label: 'Éditeur de niveaux',  match: ['/editor'] }

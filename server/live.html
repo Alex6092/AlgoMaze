@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <title>Vue live — AlgoMaze</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/assets/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script src="/js/auth.js"></script>
+    <script src="/js/app-shell.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+
+<body>
+
+    <main class="app-main">
+        <h1 class="page-title">Vue live</h1>
+        <p class="page-subtitle">Suivi temps réel des étudiants connectés pendant le cours.</p>
+
+        <div class="live-controls">
+            <div class="live-stats">
+                <span><b id="live-count-active">0</b> actifs</span>
+                <span><b id="live-count-idle">0</b> ralentis</span>
+                <span><b id="live-count-stuck">0</b> bloqués</span>
+                <span><b id="live-count-offline">0</b> déconnectés</span>
+            </div>
+            <div class="live-filter-pills" role="group" aria-label="Filtrer">
+                <button type="button" data-filter="all" class="active">Tous</button>
+                <button type="button" data-filter="active">Actifs</button>
+                <button type="button" data-filter="stuck">Bloqués</button>
+                <button type="button" data-filter="online">Connectés</button>
+            </div>
+        </div>
+
+        <div class="live-grid" id="live-grid">
+            <div class="empty-state live-empty">En attente d'étudiants…</div>
+        </div>
+    </main>
+
+    <div id="notification-container"></div>
+
+    <script>
+        const STUCK_FAILED_ATTEMPTS = 3;            // ≥ N échecs consécutifs → "bloqué"
+        const ACTIVE_RECENT_MS      = 60 * 1000;    // moins de 60 s → "actif"
+        const IDLE_RECENT_MS        = 5 * 60 * 1000;// 1-5 min → "ralenti", au-delà → "déconnecté visuellement"
+
+        const state = new Map(); // username -> presence object
+        let currentFilter = 'all';
+
+        function showNotification(message, type) {
+            const container = document.getElementById('notification-container');
+            const n = document.createElement('div');
+            n.className = 'notification ' + type;
+            n.innerText = message;
+            container.appendChild(n);
+            setTimeout(() => n.remove(), 3000);
+        }
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // Classification du statut d'un étudiant à partir de son état de présence.
+        function classify(p) {
+            const now = Date.now();
+            if (!p.online) return 'offline';
+            const age = now - (p.lastSeenAt || 0);
+            if ((p.failedAttemptsOnLevel || 0) >= STUCK_FAILED_ATTEMPTS) return 'stuck';
+            if (age <= ACTIVE_RECENT_MS) return 'active';
+            if (age <= IDLE_RECENT_MS) return 'idle';
+            return 'offline'; // pas de heartbeat depuis 5 min → on traite comme offline
+        }
+
+        function formatDuration(ms) {
+            if (ms < 0 || !isFinite(ms)) return '—';
+            const s = Math.floor(ms / 1000);
+            if (s < 60) return s + 's';
+            const m = Math.floor(s / 60);
+            if (m < 60) return m + ' min';
+            const h = Math.floor(m / 60);
+            return h + 'h' + (m % 60).toString().padStart(2, '0');
+        }
+
+        function renderCard(p) {
+            const status = classify(p);
+            const now = Date.now();
+            const timeOnLevel = p.levelStartedAt ? formatDuration(now - p.levelStartedAt) : '—';
+            const sinceSeen = p.lastSeenAt ? formatDuration(now - p.lastSeenAt) : '—';
+
+            const flags = [];
+            if ((p.failedAttemptsOnLevel || 0) >= STUCK_FAILED_ATTEMPTS) {
+                flags.push(`<span class="live-flag">⚠️ ${p.failedAttemptsOnLevel}× échecs</span>`);
+            }
+            if (p.signals) {
+                if ((p.signals.printScreenCount || 0) > 0) flags.push('<span class="live-flag warn">📷 capture</span>');
+                if ((p.signals.awaySeconds || 0) >= 60) flags.push('<span class="live-flag warn">↗️ ' + Math.floor(p.signals.awaySeconds / 60) + ' min hors-onglet</span>');
+                if ((p.signals.pasteChars || 0) > 200) flags.push('<span class="live-flag warn">📋 paste ' + p.signals.pasteChars + ' car.</span>');
+            }
+
+            const masteryPill = p.mastery
+                ? `<span class="mastery-badge ${escapeHtml(p.mastery.color)}" style="font-size:0.75rem;padding:2px 8px;">${escapeHtml(p.mastery.name)}</span>`
+                : '';
+
+            const lastCheckTag = (p.lastEvent === 'check' && p.lastCheckResult === true)
+                ? '<span class="live-flag info">✓ niveau validé</span>'
+                : '';
+
+            return `
+                <div class="live-card status-${status}" data-username="${escapeHtml(p.username)}" data-status="${status}">
+                    <div class="live-card-header">
+                        <span class="live-card-dot ${status}"></span>
+                        <span class="live-card-username">${escapeHtml(p.username)}</span>
+                        ${masteryPill}
+                    </div>
+                    <div class="live-card-level">
+                        <span class="label">Niveau</span>${p.currentLevel != null ? escapeHtml(p.currentLevel) : '—'}
+                    </div>
+                    <div class="live-card-meta">
+                        <span>⏱ ${escapeHtml(timeOnLevel)} sur niveau</span>
+                        <span>· vu il y a ${escapeHtml(sinceSeen)}</span>
+                    </div>
+                    ${flags.length || lastCheckTag ? `<div class="live-card-badges">${lastCheckTag}${flags.join('')}</div>` : ''}
+                    <div class="live-card-actions">
+                        <a href="/solutions" title="Aller voir ses solutions">Solutions →</a>
+                    </div>
+                </div>
+            `;
+        }
+
+        function passesFilter(p) {
+            const s = classify(p);
+            if (currentFilter === 'all')     return true;
+            if (currentFilter === 'active')  return s === 'active';
+            if (currentFilter === 'stuck')   return s === 'stuck';
+            if (currentFilter === 'online')  return p.online;
+            return true;
+        }
+
+        function render() {
+            const grid = document.getElementById('live-grid');
+            const all = Array.from(state.values());
+
+            // Compteurs (sur l'ensemble, pas le filtre).
+            let active = 0, idle = 0, stuck = 0, offline = 0;
+            all.forEach(p => {
+                const s = classify(p);
+                if (s === 'active') active++;
+                else if (s === 'idle') idle++;
+                else if (s === 'stuck') stuck++;
+                else offline++;
+            });
+            document.getElementById('live-count-active').textContent  = active;
+            document.getElementById('live-count-idle').textContent    = idle;
+            document.getElementById('live-count-stuck').textContent   = stuck;
+            document.getElementById('live-count-offline').textContent = offline;
+
+            // Tri : bloqués d'abord (urgent), puis actifs, puis ralentis, puis offline.
+            const order = { stuck: 0, active: 1, idle: 2, offline: 3 };
+            const filtered = all.filter(passesFilter).sort((a, b) => {
+                const sa = order[classify(a)] ?? 9;
+                const sb = order[classify(b)] ?? 9;
+                if (sa !== sb) return sa - sb;
+                return (a.username || '').localeCompare(b.username || '');
+            });
+
+            if (!filtered.length) {
+                grid.innerHTML = '<div class="empty-state live-empty">Aucun étudiant ne correspond à ce filtre.</div>';
+                return;
+            }
+            grid.innerHTML = filtered.map(renderCard).join('');
+        }
+
+        function applyUpdate(p) {
+            if (!p || !p.username) return;
+            state.set(p.username, p);
+            render();
+        }
+        function applyRemove(p) {
+            if (!p || !p.username) return;
+            state.delete(p.username);
+            render();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Filtres
+            document.querySelectorAll('.live-filter-pills button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.live-filter-pills button').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentFilter = btn.getAttribute('data-filter');
+                    render();
+                });
+            });
+
+            const token = localStorage.getItem('token');
+            const socket = io({ auth: { token } });
+
+            socket.on('connect_error', (err) => {
+                showNotification('Connexion temps réel impossible : ' + err.message, 'error');
+            });
+
+            socket.on('presence:snapshot', (list) => {
+                state.clear();
+                (list || []).forEach(p => p && p.username && state.set(p.username, p));
+                render();
+            });
+
+            socket.on('presence:update', applyUpdate);
+            socket.on('presence:remove', applyRemove);
+
+            // Refresh local toutes les 5 s pour mettre à jour les durées (temps écoulé)
+            // même quand aucun event ne survient.
+            setInterval(render, 5000);
+        });
+    </script>
+</body>
+</html>
