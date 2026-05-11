@@ -18,6 +18,7 @@
         <script src="/js/shared.js"></script>
         <script src="/js/common.js"></script>
         <script src="/js/algomaze.js"></script>
+        <script src="/js/tutorial.js" defer></script>
         <!-- Socket.io client -->
         <script src="/socket.io/socket.io.js"></script>
         <!-- CodeMirror JS -->
@@ -84,6 +85,8 @@
             est enregistrée à des fins pédagogiques pour permettre à ton enseignant de t'accompagner
             et d'évaluer ton parcours.
         </footer>
+
+        <button class="tutorial-help-btn" id="tutorial-help-btn" type="button" title="Revoir le tutoriel" aria-label="Revoir le tutoriel">?</button>
 
         <div id="notification-container"></div>
 
@@ -525,6 +528,14 @@
 
                 await fetchLevels();
                 await fetchPlayerProgress(Number.isInteger(requestedLevel) ? requestedLevel : null);
+
+                // Bouton "?" pour relancer le tutoriel à la demande.
+                const helpBtn = document.getElementById('tutorial-help-btn');
+                if (helpBtn) {
+                    helpBtn.addEventListener('click', () => {
+                        if (window.AppTutorial) window.AppTutorial.start();
+                    });
+                }
             });
         </script>
 
