@@ -185,7 +185,35 @@ window.AppShell = (function() {
         if (user && !user.isAdmin) {
             refreshRank();
         }
+        startKeepAlive();
         document.dispatchEvent(new CustomEvent('app-shell-ready', { detail: { user } }));
+    }
+
+    // Keep-alive : ping périodique de /user/me pour déclencher le sliding refresh
+    // côté serveur tant que l'onglet est visible. Évite l'expiration silencieuse du
+    // token si l'étudiant lit un énoncé sans cliquer pendant plus longtemps que TTL/2.
+    // Le ping ne tourne que si l'onglet est visible (pas de gaspillage en arrière-plan).
+    const KEEPALIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 min — bien en dessous de TTL/2 (2h15)
+    let _keepAliveTimer = null;
+    function startKeepAlive() {
+        if (_keepAliveTimer) return;
+        const tick = async () => {
+            if (document.visibilityState !== 'visible') return;
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            try {
+                await fetch('/user/me', {
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    credentials: 'include'
+                });
+                // L'intercepteur fetch global gère la mise à jour de token si refresh + le 401 si expiré.
+            } catch (e) { /* silencieux : ce sera retenté au prochain tick */ }
+        };
+        _keepAliveTimer = setInterval(tick, KEEPALIVE_INTERVAL_MS);
+        // Tick immédiat dès qu'on redevient visible (rattrape un long blur).
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') tick();
+        });
     }
 
     if (document.readyState === 'loading') {

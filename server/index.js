@@ -12,7 +12,7 @@ import { Direction, SwitchState } from './shared.js';
 import userRouter from './routes/user.js';
 import redisClient from './redisClient.js';
 import { __dirname } from './utils.js';
-import { generateToken, verifyToken, userFromToken, slidingRefresh } from './jwtConfig.js';
+import { generateToken, verifyToken, userFromToken, slidingRefresh, TOKEN_COOKIE_OPTIONS, getTokenFromReq, requireUser, requireAdmin } from './jwtConfig.js';
 import config from './config.json' assert { type: 'json' };
 import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
 import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp } from './badges.js';
@@ -62,7 +62,7 @@ app.use((req, res, next) => {
             // Sliding refresh sur le cookie : on renouvelle si plus de la moitié du TTL est écoulée.
             const refreshResult = slidingRefresh(token);
             if (refreshResult.refreshed) {
-                res.cookie('token', refreshResult.token, { httpOnly: false, secure: false });
+                res.cookie('token', refreshResult.token, TOKEN_COOKIE_OPTIONS);
                 res.setHeader('X-Refreshed-Token', refreshResult.token);
             }
 
@@ -168,7 +168,7 @@ app.get('/sso/from-moodle', async (req, res) => {
 
         // Pose le cookie JWT (même format que /user/login) et redirige vers le jeu.
         const token = generateToken(uname);
-        res.cookie('token', token, { httpOnly: false, secure: false });
+        res.cookie('token', token, TOKEN_COOKIE_OPTIONS);
         const target = lvl > 0 ? '/maze?level=' + lvl : '/maze';
         return res.redirect(target);
     } catch (error) {
@@ -250,8 +250,9 @@ app.get('/solutions', async (req, res) => {
 app.get('/levels', async (req, res) => {
     try
     {
-        const token = req.headers.authorization.split(" ")[1];
-        var user = await userFromToken(token);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        const user = ctx.user;
 
         // Request levels list from redis :
         var result = await redisClient.keys("level:*");
@@ -281,8 +282,9 @@ app.get('/level/:uid', async (req, res) => {
     try
     {
         var levelId = req.params.uid;
-        const token = req.headers.authorization.split(" ")[1];
-        var user = await userFromToken(token);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        const user = ctx.user;
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
         {   
             var result = await loadLevel(levelId);
@@ -303,8 +305,9 @@ app.get('/level/:uid', async (req, res) => {
 app.get('/level/:uid/usersolution', async (req, res) => {
     try {
         var levelId = req.params.uid;
-        const token = req.headers.authorization.split(" ")[1];
-        var user = await userFromToken(token);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        const user = ctx.user;
 
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
         {
@@ -331,8 +334,9 @@ app.post('/checkanswer', async (req, res) => {
 
     try {
         const { levelId, code, signals } = req.body;
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        const user = ctx.user;
 
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
         {
@@ -396,8 +400,9 @@ app.post('/checkanswer', async (req, res) => {
 app.post('/precheck', async (req, res) => {
     try {
         const { levelId, code, signals } = req.body;
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        const user = ctx.user;
 
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
         {
@@ -424,21 +429,12 @@ app.post('/precheck', async (req, res) => {
 app.post('/savelevel/:uid', async (req, res) => {
     try
     {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
-
-        if(user.isAdmin)
-        {
-            const levelData = req.body;
-            var levelId = req.params.uid;
-
-            levelId = await saveLevel(levelData, levelId);
-            res.send({ levelId: levelId, status: 'Level saved successfully' });
-        }
-        else
-        {
-            res.status(403).send({ error: 'You are not an administrator'});
-        }
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
+        const levelData = req.body;
+        var levelId = req.params.uid;
+        levelId = await saveLevel(levelData, levelId);
+        res.send({ levelId: levelId, status: 'Level saved successfully' });
     } catch (error) {
         console.log("[ERROR] /savelevel/:uid " + error);
         res.status(500).send({ error: 'Failed to save level' });
@@ -446,22 +442,13 @@ app.post('/savelevel/:uid', async (req, res) => {
 });
 
 app.post('/savelevel', async (req, res) => {
-    
     try
     {
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
         const levelData = req.body;
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
-
-        if(user.isAdmin)
-        {
-            let levelId = await saveLevel(levelData, -1);
-            res.send({ levelId: levelId, status: 'Level saved successfully' });
-        }
-        else
-        {
-            res.status(403).send({ error: 'You are not an administrator'});
-        }
+        let levelId = await saveLevel(levelData, -1);
+        res.send({ levelId: levelId, status: 'Level saved successfully' });
     } catch (error) {
         console.log("[ERROR] /savelevel " + error);
         res.status(500).send({ error: 'Failed to save level' });
@@ -472,42 +459,35 @@ app.post('/savelevel', async (req, res) => {
 app.get('/userprogressreport', async (req, res) => {
     try
     {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
 
-        if(user.isAdmin)
+        const windowSize = (config && config.slidingMedianWindow) || 10;
+        var userKeys = await redisClient.keys("user:*");
+
+        var result = [];
+        for(var userKey of userKeys)
         {
-            const windowSize = (config && config.slidingMedianWindow) || 10;
-            var userKeys = await redisClient.keys("user:*");
-
-            var result = [];
-            for(var userKey of userKeys)
-            {
-                var userData = await redisClient.get(userKey);
-                userData = JSON.parse(userData);
-                // Rang global = médiane glissante des XP des derniers niveaux validés.
-                // Maîtrise = cumul des XP sur l'ensemble des niveaux (best-ever par niveau).
-                const rankInfo = await computeUserRank(userData.username, windowSize);
-                const totalXp = await computeUserTotalXp(userData.username);
-                const mastery = computeMastery(userData.lastCompletedLevel || 0, totalXp);
-                result.push({
-                    username: userData.username,
-                    lastCompletedLevel: userData.lastCompletedLevel,
-                    rank: rankInfo.rank,
-                    medianXp: rankInfo.median,
-                    rankSample: rankInfo.sample,
-                    mastery
-                });
-            }
-
-            result.sort(function(a, b) { return a.username.localeCompare(b.username) });
-
-            res.status(200).send(result);
+            var userData = await redisClient.get(userKey);
+            userData = JSON.parse(userData);
+            // Rang global = médiane glissante des XP des derniers niveaux validés.
+            // Maîtrise = cumul des XP sur l'ensemble des niveaux (best-ever par niveau).
+            const rankInfo = await computeUserRank(userData.username, windowSize);
+            const totalXp = await computeUserTotalXp(userData.username);
+            const mastery = computeMastery(userData.lastCompletedLevel || 0, totalXp);
+            result.push({
+                username: userData.username,
+                lastCompletedLevel: userData.lastCompletedLevel,
+                rank: rankInfo.rank,
+                medianXp: rankInfo.median,
+                rankSample: rankInfo.sample,
+                mastery
+            });
         }
-        else
-        {
-            res.status(403).send({ error: 'You are not an administrator'});
-        }
+
+        result.sort(function(a, b) { return a.username.localeCompare(b.username) });
+
+        res.status(200).send(result);
     } catch (error) {
         console.log("[ERROR] /userprogressreport " + error);
         res.status(500).send({ error: 'Failed to get user progress data' });
@@ -517,11 +497,8 @@ app.get('/userprogressreport', async (req, res) => {
 // Vue admin : toutes les solutions d'un utilisateur (par niveau), avec feedback IA si disponible.
 app.get('/admin/solutions/user/:username', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const adminUser = await userFromToken(token);
-        if (!adminUser.isAdmin) {
-            return res.status(403).send({ error: 'You are not an administrator' });
-        }
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
 
         const username = req.params.username.toLowerCase();
         const solutionKeys = await redisClient.keys('usersolution:' + username + ':level:*');
@@ -548,11 +525,8 @@ app.get('/admin/solutions/user/:username', async (req, res) => {
 // Vue admin : toutes les solutions soumises pour un niveau donné (par utilisateur), avec feedback IA si disponible.
 app.get('/admin/solutions/level/:levelId', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const adminUser = await userFromToken(token);
-        if (!adminUser.isAdmin) {
-            return res.status(403).send({ error: 'You are not an administrator' });
-        }
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
 
         const levelId = parseInt(req.params.levelId);
         const solutionKeys = await redisClient.keys('usersolution:*:level:' + levelId);
@@ -585,11 +559,8 @@ app.get('/admin/solutions/level/:levelId', async (req, res) => {
 // les solutions se ressemblent légitimement).
 app.get('/admin/similarity/level/:levelId', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const adminUser = await userFromToken(token);
-        if (!adminUser.isAdmin) {
-            return res.status(403).send({ error: 'You are not an administrator' });
-        }
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
         const levelId = parseInt(req.params.levelId);
         const analysis = await analyzeLevelSimilarity(levelId);
         res.send(analysis);
@@ -628,8 +599,9 @@ app.post('/check_completion', async (req, res) => {
 // maîtrise = XP cumulés / XP max théorique (compétence acquise globale, monotone non-décroissante)
 app.get('/user/rank', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        const user = ctx.user;
         const windowSize = (config && config.slidingMedianWindow) || 10;
         const rank = await computeUserRank(user.username, windowSize);
         const totalXp = await computeUserTotalXp(user.username);
@@ -644,9 +616,9 @@ app.get('/user/rank', async (req, res) => {
 // Tous les badges de l'utilisateur courant, par niveau.
 app.get('/user/badges', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
-        const badges = await getUserBadges(user.username);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        const badges = await getUserBadges(ctx.user.username);
         res.send(badges);
     } catch (error) {
         console.log("[ERROR] /user/badges " + error);
@@ -658,11 +630,11 @@ app.get('/user/badges', async (req, res) => {
 // Utilisé au chargement d'un niveau pour afficher un éventuel feedback existant.
 app.get('/feedback/:levelId', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
         const levelId = parseInt(req.params.levelId);
-        const status = await getFeedbackStatus(user.username, levelId);
-        const result = await getFeedbackResult(user.username, levelId);
+        const status = await getFeedbackStatus(ctx.user.username, levelId);
+        const result = await getFeedbackResult(ctx.user.username, levelId);
         res.send({ status, result });
     } catch (error) {
         console.log("[ERROR] /feedback/:levelId " + error);
@@ -676,11 +648,8 @@ app.get('/feedback/:levelId', async (req, res) => {
 // l'année prochaine quand le rattrapage initial sera terminé.
 app.get('/admin/missing-feedbacks', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const adminUser = await userFromToken(token);
-        if (!adminUser.isAdmin) {
-            return res.status(403).send({ error: 'You are not an administrator' });
-        }
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
         const enabled = !!(config && config.enableBulkEvaluation);
         if (!enabled) {
             return res.send({ enabled: false, missing: 0, total: 0 });
@@ -707,11 +676,8 @@ app.get('/admin/missing-feedbacks', async (req, res) => {
 // une solution qui ne marche pas. La queue worker traite les jobs un à un.
 app.post('/admin/bulk-evaluate', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const adminUser = await userFromToken(token);
-        if (!adminUser.isAdmin) {
-            return res.status(403).send({ error: 'You are not an administrator' });
-        }
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
         if (!(config && config.enableBulkEvaluation)) {
             return res.status(403).send({ error: 'Bulk evaluation is disabled in config' });
         }
@@ -771,11 +737,8 @@ app.post('/admin/bulk-evaluate', async (req, res) => {
 // L'ancien résultat reste affiché tant que le nouveau n'arrive pas.
 app.post('/admin/regenerate-feedback/:username/:levelId', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const adminUser = await userFromToken(token);
-        if (!adminUser.isAdmin) {
-            return res.status(403).send({ error: 'You are not an administrator' });
-        }
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
         const username = req.params.username.toLowerCase();
         const levelId = parseInt(req.params.levelId);
 
@@ -819,11 +782,8 @@ app.post('/admin/regenerate-feedback/:username/:levelId', async (req, res) => {
 // Vue admin : feedback IA stocké pour un (user, level).
 app.get('/admin/feedback/:username/:levelId', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const adminUser = await userFromToken(token);
-        if (!adminUser.isAdmin) {
-            return res.status(403).send({ error: 'You are not an administrator' });
-        }
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
         const username = req.params.username.toLowerCase();
         const levelId = parseInt(req.params.levelId);
         const status = await getFeedbackStatus(username, levelId);
