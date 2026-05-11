@@ -17,7 +17,11 @@ import config from './config.json' assert { type: 'json' };
 import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
 import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp } from './badges.js';
 import { interpretSignals, analyzeLevelSimilarity } from './cheatDetection.js';
+import { loginLimiter, checkAnswerLimiter, precheckLimiter } from './rateLimit.js';
 const app = express();
+// Trust Apache reverse proxy : req.ip renvoie la vraie IP client (X-Forwarded-For)
+// au lieu de l'IP du proxy. Indispensable pour que le rate-limiting fonctionne par IP.
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(cors({
     origin: 'http://localhost:3000', // Remplacez par votre domaine
@@ -330,7 +334,7 @@ app.get('/level/:uid/usersolution', async (req, res) => {
     }
 });
 
-app.post('/checkanswer', async (req, res) => {
+app.post('/checkanswer', checkAnswerLimiter, async (req, res) => {
 
     try {
         const { levelId, code, signals } = req.body;
@@ -397,7 +401,7 @@ app.post('/checkanswer', async (req, res) => {
 // Sert à détecter les boucles infinies (timeout) et à sauvegarder le code de l'étudiant
 // avant qu'il ne lance l'exécution dans son navigateur (qui pourrait freezer).
 // Retourne { ok, timeout, error }.
-app.post('/precheck', async (req, res) => {
+app.post('/precheck', precheckLimiter, async (req, res) => {
     try {
         const { levelId, code, signals } = req.body;
         const ctx = await requireUser(req, res);
@@ -1266,23 +1270,30 @@ function checkAnswer(levelData, code)
 
             return result;
         },
+        // Calcule l'offset (dx,dy) de la case située à gauche ou à droite du personnage
+        // selon sa direction courante — sans rotation, donc sans animation parasite.
+        sideOffset: (side) => {
+            const dir = context.characterDirection;
+            if (side === 'left') {
+                if (dir == Direction.Down)  return { dx: 1,  dy: 0  };
+                if (dir == Direction.Right) return { dx: 0,  dy: -1 };
+                if (dir == Direction.Up)    return { dx: -1, dy: 0  };
+                if (dir == Direction.Left)  return { dx: 0,  dy: 1  };
+            } else { // 'right'
+                if (dir == Direction.Down)  return { dx: -1, dy: 0  };
+                if (dir == Direction.Left)  return { dx: 0,  dy: -1 };
+                if (dir == Direction.Up)    return { dx: 1,  dy: 0  };
+                if (dir == Direction.Right) return { dx: 0,  dy: 1  };
+            }
+            return { dx: 0, dy: 0 };
+        },
         isBlockedLeft: () => {
-            var result = false;
-            context.turnLeft();
-            result = context.isBlocked();
-            context.turnLeft();
-            context.turnLeft();
-            context.turnLeft();
-            return result;
+            const { dx, dy } = context.sideOffset('left');
+            return context.isSolidTileAtXY(context.character.x + dx, context.character.y + dy);
         },
         isBlockedRight: () => {
-            var result = false;
-            context.turnLeft();
-            context.turnLeft();
-            context.turnLeft();
-            result = context.isBlocked();
-            context.turnLeft();
-            return result;
+            const { dx, dy } = context.sideOffset('right');
+            return context.isSolidTileAtXY(context.character.x + dx, context.character.y + dy);
         }
     };
 

@@ -880,27 +880,36 @@ function isBlocked()
     return result;
 }
 
-// Solution pour pas trop se faire chier ...
+// Détermine l'offset (dx,dy) de la case située à gauche ou à droite du personnage
+// selon sa direction courante. Permet d'implémenter isBlockedLeft/Right sans rotation,
+// évitant les pirouettes visuelles parasites pendant l'exécution.
+function _sideOffset(side)
+{
+    const dir = Game.hero.gridDirection;
+    if (side === 'left') {
+        if (dir == Direction.Down)  return { dx: 1,  dy: 0  };
+        if (dir == Direction.Right) return { dx: 0,  dy: -1 };
+        if (dir == Direction.Up)    return { dx: -1, dy: 0  };
+        if (dir == Direction.Left)  return { dx: 0,  dy: 1  };
+    } else { // 'right'
+        if (dir == Direction.Down)  return { dx: -1, dy: 0  };
+        if (dir == Direction.Left)  return { dx: 0,  dy: -1 };
+        if (dir == Direction.Up)    return { dx: 1,  dy: 0  };
+        if (dir == Direction.Right) return { dx: 0,  dy: 1  };
+    }
+    return { dx: 0, dy: 0 };
+}
+
 function isBlockedLeft()
 {
-    var result = false;
-    turnLeft();
-    result = isBlocked();
-    turnLeft();
-    turnLeft();
-    turnLeft();
-    return result;
+    const { dx, dy } = _sideOffset('left');
+    return map.isSolidTileAtXY((Game.hero.xGrid + dx) * map.tsize, (Game.hero.yGrid + dy) * map.tsize);
 }
 
 function isBlockedRight()
 {
-    var result = false;
-    turnLeft();
-    turnLeft();
-    turnLeft();
-    result = isBlocked();
-    turnLeft();
-    return result;
+    const { dx, dy } = _sideOffset('right');
+    return map.isSolidTileAtXY((Game.hero.xGrid + dx) * map.tsize, (Game.hero.yGrid + dy) * map.tsize);
 }
 // ------------------------------------------------
 
