@@ -1108,6 +1108,27 @@ function isBlockedRight()
 }
 // ------------------------------------------------
 
+// Soft reset : remet l'état visuel des gems/switches existants à leur état initial
+// SANS recréer les arrays — contrairement à initializeGemsAndSwitches() qui re-randomise
+// les tuiles `randomTile`. Indispensable pour que le dry-run du visualiseur opère
+// sur la MÊME disposition que celle utilisée par l'eval du code utilisateur.
+function _softResetScene() {
+    Game.hero.resetPosition();
+    Game._showThinking = false;
+    for (var i = 0; i < Game.gems.length; i++) {
+        var g = Game.gems[i];
+        g.collected = false;
+        g.gridCollected = false;
+        g.animatingCollect = null;
+    }
+    for (var i = 0; i < Game.switches.length; i++) {
+        var s = Game.switches[i];
+        s.state = s.initialState;
+        s.gridState = s.initialState;
+        s.animatingToggle = null;
+    }
+}
+
 // ===== Visualiseur pas-à-pas : pré-calcul des snapshots pour navigation backward =====
 // À chaque appel de solve(), on enregistre l'état visuel attendu APRÈS chaque action.
 // L'élève peut ensuite scruber n'importe quel pas instantanément via le slider.
@@ -1229,10 +1250,10 @@ function solve(code)
     Game.totalSteps = Game.allActions.length;
     Game.currentStep = 0;
 
-    // Dry-run : on remet la scène à zéro et on capture le snapshot à chaque pas.
-    Game.hero.resetPosition();
-    Game.initializeGemsAndSwitches();
-    Game._showThinking = false;
+    // Dry-run : remise à zéro SANS re-randomisation des tuiles `randomTile`.
+    // On ne touche pas aux arrays Game.gems / Game.switches — l'élève a écrit son code
+    // en fonction de cette disposition et c'est elle qu'on doit lui visualiser.
+    _softResetScene();
 
     Game.snapshots = [_captureSnapshot()];
     for (var i = 0; i < Game.allActions.length; i++) {
