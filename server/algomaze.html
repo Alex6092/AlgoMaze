@@ -63,15 +63,27 @@
                             <button class="icon-btn" id="submit-button" type="button" title="Vérifier la solution">
                                 <img src="/assets/verify.png" alt="">
                             </button>
-                            <button class="icon-btn exec-ctrl" id="pause-button" type="button" title="Pause / Reprendre" disabled>⏸</button>
-                            <button class="icon-btn exec-ctrl" id="step-button" type="button" title="Pas suivant" disabled>⏭</button>
-                            <button class="icon-btn exec-ctrl" id="stop-button" type="button" title="Arrêter / Réinitialiser" disabled>⏹</button>
+                            <button class="icon-btn exec-ctrl" id="pause-button" type="button" title="Pause / Reprendre" disabled aria-label="Pause">
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="2.5" width="3.5" height="11" rx="0.7"/><rect x="9.5" y="2.5" width="3.5" height="11" rx="0.7"/></svg>
+                            </button>
+                            <button class="icon-btn exec-ctrl" id="step-button" type="button" title="Pas suivant" disabled aria-label="Pas suivant">
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.5 2.7c0-.5.5-.8 1-.5l8 5.3a.6.6 0 0 1 0 1l-8 5.3c-.5.3-1 0-1-.5z"/><rect x="12.5" y="2.5" width="2.2" height="11" rx="0.5"/></svg>
+                            </button>
+                            <button class="icon-btn exec-ctrl" id="stop-button" type="button" title="Arrêter / Réinitialiser" disabled aria-label="Stop">
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+                            </button>
                             <div class="speed-control">
                                 <label for="speed-slider" class="speed-label">Vitesse</label>
                                 <input type="range" id="speed-slider" min="0.25" max="3" step="0.25" value="1">
                                 <span id="speed-value">1×</span>
                             </div>
                             <button id="next-level-button" type="button">Niveau suivant ➡</button>
+                        </div>
+
+                        <!-- Barre de progression de l'exécution : permet de scruber pas à pas. -->
+                        <div class="exec-progress disabled" id="exec-progress">
+                            <span class="exec-step-label" id="exec-step-label">0 / 0</span>
+                            <input type="range" id="exec-progress-slider" min="0" max="0" value="0" step="1" disabled aria-label="Avancer/reculer dans l'exécution">
                         </div>
 
                         <div class="command-buttons">
@@ -272,9 +284,11 @@
                     stepBtn.disabled  = !execActive;
                     stopBtn.disabled  = !execActive;
                 }
+                const SVG_PAUSE = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="2.5" width="3.5" height="11" rx="0.7"/><rect x="9.5" y="2.5" width="3.5" height="11" rx="0.7"/></svg>';
+                const SVG_PLAY  = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 2.7c0-.5.5-.8 1-.5l8.5 5.3a.6.6 0 0 1 0 1l-8.5 5.3c-.5.3-1 0-1-.5z"/></svg>';
                 function updatePauseButton() {
                     const paused = !!(window.Game && Game.paused);
-                    pauseBtn.textContent = paused ? '▶' : '⏸';
+                    pauseBtn.innerHTML = paused ? SVG_PLAY : SVG_PAUSE;
                     pauseBtn.title = paused ? 'Reprendre' : 'Pause';
                 }
 
@@ -301,6 +315,36 @@
                 document.addEventListener('algomaze:execution-end', () => setControlsEnabled(false));
                 document.addEventListener('algomaze:pause-state', updatePauseButton);
                 document.addEventListener('algomaze:reset', () => setControlsEnabled(false));
+
+                // ----- Barre de progression / scrub des pas -----
+                const progressWrap   = document.getElementById('exec-progress');
+                const progressSlider = document.getElementById('exec-progress-slider');
+                const progressLabel  = document.getElementById('exec-step-label');
+
+                document.addEventListener('algomaze:execution-start', (e) => {
+                    const total = (e.detail && e.detail.total) || 0;
+                    progressSlider.min = 0;
+                    progressSlider.max = total;
+                    progressSlider.value = 0;
+                    progressSlider.disabled = total === 0;
+                    progressWrap.classList.toggle('disabled', total === 0);
+                    progressLabel.textContent = '0 / ' + total;
+                });
+                document.addEventListener('algomaze:step', (e) => {
+                    const step  = (e.detail && e.detail.step)  || 0;
+                    const total = (e.detail && e.detail.total) || 0;
+                    progressSlider.value = step;
+                    progressSlider.max = total;
+                    progressSlider.disabled = total === 0;
+                    progressWrap.classList.toggle('disabled', total === 0);
+                    progressLabel.textContent = step + ' / ' + total;
+                });
+                progressSlider.addEventListener('input', () => {
+                    if (window.Game && typeof Game.scrubToStep === 'function') {
+                        Game.scrubToStep(parseInt(progressSlider.value));
+                        setControlsEnabled(true);
+                    }
+                });
 
                 // Listener "paste" : CodeMirror étiquette les changements provenant d'un coller.
                 editor.on('change', (cm, change) => {

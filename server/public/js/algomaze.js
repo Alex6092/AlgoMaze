@@ -381,7 +381,9 @@ Game.init = function () {
     this.displayRandomTile = true;
     // État du visualiseur pas-à-pas.
     this.paused = false;          // si vrai, l'update boucle sans consommer la file
-    this.speed = 1;               // multiplicateur de vitesse (sur delta de l'animation)
+    // this.speed est volontairement omis : c'est une préférence utilisateur qui doit
+    // persister entre les niveaux (Game.init() est appelé à chaque changement de niveau).
+    if (this.speed == null) this.speed = 1;
     this.stepOnce = false;        // sur clic "Pas suivant" : autorise un seul cran puis re-pause
     this.currentActionLine = null;// ligne source de l'action en cours d'exécution
 };
@@ -389,6 +391,23 @@ Game.init = function () {
 // Émet un CustomEvent vers le DOM pour que l'UI puisse réagir (surlignage ligne, etc.).
 function _emitGameEvent(type, detail) {
     try { document.dispatchEvent(new CustomEvent(type, { detail })); } catch (e) {}
+}
+
+// Helpers pour les actions à durée fixe (turnLeft, collectGem, toggleSwitch, CHECK) :
+// _holdSince est attaché à l'objet action quand il entre en tête de file.
+function _holdElapsed(head) {
+    if (!head || head._holdSince == null) return 0;
+    return performance.now() - head._holdSince;
+}
+function _holdDuration(baseMs, speed) {
+    return baseMs / Math.max(0.25, speed || 1);
+}
+
+// Helper qui shift la file ET incrémente le compteur de pas + émet l'event de progression.
+function _consumeAction() {
+    Game.actionQueue.shift();
+    Game.currentStep = (Game.currentStep || 0) + 1;
+    _emitGameEvent('algomaze:step', { step: Game.currentStep, total: Game.totalSteps || 0 });
 }
 
 Game.update = function (delta) {
@@ -423,28 +442,28 @@ Game.update = function (delta) {
         {
             this.hero.goDown(delta, function() {
                 checkTeleporter(false);
-                Game.actionQueue.shift();
+                _consumeAction();
             });
         }
         else if(actionName == "UP")
         {
             this.hero.goUp(delta, function() {
                 checkTeleporter(false);
-                Game.actionQueue.shift();
+                _consumeAction();
             });
         }
         else if(actionName == "LEFT")
         {
             this.hero.goLeft(delta, function() {
                 checkTeleporter(false);
-                Game.actionQueue.shift();
+                _consumeAction();
             });
         }
         else if(actionName == "RIGHT")
         {
             this.hero.goRight(delta, function() {
                 checkTeleporter(false);
-                Game.actionQueue.shift();
+                _consumeAction();
             });
         }
         else if(actionName == "AVANCER")
@@ -458,40 +477,86 @@ Game.update = function (delta) {
         }
         else if(actionName == "TURN_LEFT")
         {
-            this.hero.turnLeft();
-            Game.actionQueue.shift();
+            // Effectue le tour à l'entrée, puis maintient l'affichage 200 ms (scaled par speed)
+            // pour que l'élève voie l'orientation avant l'action suivante.
+            if (typeof head === 'object' && head._holdSince == null) {
+                this.hero.turnLeft();
+                head._holdSince = performance.now();
+            }
+            if (_holdElapsed(head) >= _holdDuration(200, this.speed)) {
+                _consumeAction();
+            }
         }
         else if(actionName == "TOGGLE_SWITCH")
         {
-            var x = this.hero.x - map.tsize / 2;
-            var y = this.hero.y - map.tsize / 2;
-
-            for(var i = 0; i < this.switches.length; i++)
-            {
-                _switch = this.switches[i];
-                if(_switch.x == x && _switch.y == y)
-                {
-                    _switch.toggle();
+            // À la première frame : on marque l'interrupteur comme "en transition" et on note
+            // l'ancien état pour permettre le crossfade entre les deux images.
+            if (typeof head === 'object' && head._holdSince == null) {
+                head._holdSince = performance.now();
+                var hx = this.hero.x - map.tsize / 2;
+                var hy = this.hero.y - map.tsize / 2;
+                for (var i = 0; i < this.switches.length; i++) {
+                    var sw = this.switches[i];
+                    if (sw.x == hx && sw.y == hy) {
+                        sw.animatingToggle = { fromState: sw.state, progress: 0 };
+                        head._switch = sw;
+                        break;
+                    }
                 }
             }
-
-            Game.actionQueue.shift();
+            var sd = _holdDuration(250, this.speed);
+            var se = _holdElapsed(head);
+            if (head._switch && head._switch.animatingToggle) {
+                head._switch.animatingToggle.progress = Math.min(1, se / sd);
+            }
+            if (se >= sd) {
+                if (head._switch) {
+                    head._switch.toggle();
+                    head._switch.animatingToggle = null;
+                }
+                _consumeAction();
+            }
         }
         else if(actionName == "COLLECT_GEM")
         {
-            var x = this.hero.x - map.tsize / 2;
-            var y = this.hero.y - map.tsize / 2;
-
-            for(var i = 0; i < this.gems.length; i++)
-            {
-                gem = this.gems[i];
-                if(gem.x == x && gem.y == y)
-                {
-                    gem.collect();
+            if (typeof head === 'object' && head._holdSince == null) {
+                head._holdSince = performance.now();
+                var hx2 = this.hero.x - map.tsize / 2;
+                var hy2 = this.hero.y - map.tsize / 2;
+                for (var j = 0; j < this.gems.length; j++) {
+                    var gem = this.gems[j];
+                    if (gem.x == hx2 && gem.y == hy2 && !gem.isCollected()) {
+                        gem.animatingCollect = { progress: 0 };
+                        head._gem = gem;
+                        break;
+                    }
                 }
             }
-
-            Game.actionQueue.shift();
+            var gd = _holdDuration(280, this.speed);
+            var ge = _holdElapsed(head);
+            if (head._gem && head._gem.animatingCollect) {
+                head._gem.animatingCollect.progress = Math.min(1, ge / gd);
+            }
+            if (ge >= gd) {
+                if (head._gem) {
+                    head._gem.collect();
+                    head._gem.animatingCollect = null;
+                }
+                _consumeAction();
+            }
+        }
+        else if(actionName == "CHECK")
+        {
+            // Action visuelle uniquement : affiche un "?" au-dessus du robot pendant un court instant
+            // pour matérialiser l'évaluation d'une condition (isBlocked, canCollectGem, etc.).
+            if (typeof head === 'object' && head._holdSince == null) {
+                head._holdSince = performance.now();
+            }
+            Game._showThinking = true;
+            if (_holdElapsed(head) >= _holdDuration(180, this.speed)) {
+                Game._showThinking = false;
+                _consumeAction();
+            }
         }
     }
 
@@ -564,14 +629,31 @@ Game._drawGemsAndSwitches = function()
     for(var i = 0; i < this.switches.length; i++)
     {
         var _switch = this.switches[i];
-        this.ctx.drawImage(_switch.getImage(), _switch.x, _switch.y);
+        if (_switch.animatingToggle) {
+            // Crossfade entre l'image de l'état initial et celle de l'état suivant.
+            var p = _switch.animatingToggle.progress || 0;
+            var fromImg = _switch.images[_switch.animatingToggle.fromState];
+            var toImg = _switch.images[_switch.animatingToggle.fromState === SwitchState.On ? SwitchState.Off : SwitchState.On];
+            this.ctx.globalAlpha = 1 - p;
+            this.ctx.drawImage(fromImg, _switch.x, _switch.y);
+            this.ctx.globalAlpha = p;
+            this.ctx.drawImage(toImg, _switch.x, _switch.y);
+            this.ctx.globalAlpha = 1;
+        } else {
+            this.ctx.drawImage(_switch.getImage(), _switch.x, _switch.y);
+        }
     }
 
     for(var i = 0; i < this.gems.length; i++)
     {
         var gem = this.gems[i];
-        if(!gem.isCollected())
-        {
+        if (gem.animatingCollect) {
+            // La gemme s'envole vers le haut et fait un fondu.
+            var pg = gem.animatingCollect.progress || 0;
+            this.ctx.globalAlpha = 1 - pg;
+            this.ctx.drawImage(gem.getImage(), gem.x, gem.y - 30 * pg);
+            this.ctx.globalAlpha = 1;
+        } else if (!gem.isCollected()) {
             this.ctx.drawImage(gem.getImage(), gem.x, gem.y);
         }
     }
@@ -610,7 +692,22 @@ Game.render = function () {
         this.hero.x - this.hero.width / 2,
         this.hero.y - this.hero.height / 2);
 
-    
+    // Indicateur "?" : le robot est en train d'évaluer une condition (CHECK action).
+    if (this._showThinking) {
+        var tx = this.hero.x;
+        var ty = this.hero.y - this.hero.height / 2 - 8;
+        this.ctx.save();
+        this.ctx.font = 'bold 28px Inter, sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'bottom';
+        this.ctx.lineWidth = 4;
+        this.ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)';
+        this.ctx.fillStyle = '#FBBF24';
+        this.ctx.strokeText('?', tx, ty);
+        this.ctx.fillText('?', tx, ty);
+        this.ctx.restore();
+    }
+
     // draw map top layer
     this._drawLayer(1);
 
@@ -656,6 +753,10 @@ Game.setSpeed = function(multiplier) {
 
 Game.reset = function() {
     this.actionQueue = [];
+    this.allActions = [];
+    this.snapshots = [];
+    this.currentStep = 0;
+    this.totalSteps = 0;
     this.hero.resetPosition();
     // Reset propre du visualiseur.
     this.paused = false;
@@ -665,6 +766,7 @@ Game.reset = function() {
         _emitGameEvent('algomaze:current-line', { line: null });
     }
     _emitGameEvent('algomaze:pause-state', { paused: false });
+    _emitGameEvent('algomaze:step', { step: 0, total: 0 });
     _emitGameEvent('algomaze:reset', {});
     /*
     for(var i = 0; i < this.switches.length; i++)
@@ -865,6 +967,7 @@ function collectGem()
 
 function canCollectGem()
 {
+    Game.queueAction("CHECK");
     var result = false;
     for(var gem of Game.gems) {
         if(gem.x / map.tsize == Game.hero.xGrid && gem.y / map.tsize == Game.hero.yGrid && !gem.gridCollected)
@@ -878,6 +981,7 @@ function canCollectGem()
 
 function isOnSwitch()
 {
+    Game.queueAction("CHECK");
     var result = false;
     for(var _switch of Game.switches) {
         if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
@@ -891,6 +995,7 @@ function isOnSwitch()
 
 function canActivateSwitch()
 {
+    Game.queueAction("CHECK");
     var result = false;
     for(var _switch of Game.switches) {
         if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
@@ -904,6 +1009,7 @@ function canActivateSwitch()
 
 function canDeactivateSwitch()
 {
+    Game.queueAction("CHECK");
     var result = false;
     for(var _switch of Game.switches) {
         if(_switch.x / map.tsize == Game.hero.xGrid && _switch.y / map.tsize == Game.hero.yGrid)
@@ -915,10 +1021,11 @@ function canDeactivateSwitch()
     return result;
 }
 
-function isBlocked() 
+function isBlocked()
 {
+    Game.queueAction("CHECK");
     var result = false;
-    
+
     var actionName = Game.hero.gridDirection;
     actionName = actionName.toUpperCase();
 
@@ -988,22 +1095,156 @@ function _sideOffset(side)
 
 function isBlockedLeft()
 {
+    Game.queueAction("CHECK");
     const { dx, dy } = _sideOffset('left');
     return map.isSolidTileAtXY((Game.hero.xGrid + dx) * map.tsize, (Game.hero.yGrid + dy) * map.tsize);
 }
 
 function isBlockedRight()
 {
+    Game.queueAction("CHECK");
     const { dx, dy } = _sideOffset('right');
     return map.isSolidTileAtXY((Game.hero.xGrid + dx) * map.tsize, (Game.hero.yGrid + dy) * map.tsize);
 }
 // ------------------------------------------------
 
+// ===== Visualiseur pas-à-pas : pré-calcul des snapshots pour navigation backward =====
+// À chaque appel de solve(), on enregistre l'état visuel attendu APRÈS chaque action.
+// L'élève peut ensuite scruber n'importe quel pas instantanément via le slider.
+function _captureSnapshot() {
+    return {
+        heroX: Game.hero.x,
+        heroY: Game.hero.y,
+        heroXGrid: Game.hero.xGrid,
+        heroYGrid: Game.hero.yGrid,
+        heroDirection: Game.hero.direction,
+        heroGridDirection: Game.hero.gridDirection,
+        gems: Game.gems.map(g => ({ collected: g.collected, gridCollected: g.gridCollected })),
+        switches: Game.switches.map(s => ({ state: s.state, gridState: s.gridState }))
+    };
+}
+
+function _applySnapshot(snap) {
+    Game.hero.x = snap.heroX;
+    Game.hero.y = snap.heroY;
+    Game.hero.xGrid = snap.heroXGrid;
+    Game.hero.yGrid = snap.heroYGrid;
+    Game.hero.direction = snap.heroDirection;
+    Game.hero.gridDirection = snap.heroGridDirection;
+    for (var i = 0; i < Game.gems.length && i < snap.gems.length; i++) {
+        Game.gems[i].collected = snap.gems[i].collected;
+        Game.gems[i].gridCollected = snap.gems[i].gridCollected;
+        Game.gems[i].animatingCollect = null;
+    }
+    for (var j = 0; j < Game.switches.length && j < snap.switches.length; j++) {
+        Game.switches[j].state = snap.switches[j].state;
+        Game.switches[j].gridState = snap.switches[j].gridState;
+        Game.switches[j].animatingToggle = null;
+    }
+    Game._showThinking = false;
+}
+
+// Applique une action SANS ANIMATION (utilisé par le dry-run et le scrub forward instant).
+function _applyActionInstantly(actionName) {
+    if (!actionName || actionName === 'CHECK') return;
+    var hero = Game.hero;
+    var resolved = actionName === 'AVANCER' ? String(hero.direction).toUpperCase() : actionName;
+
+    if (resolved === 'DOWN' || resolved === 'UP' || resolved === 'LEFT' || resolved === 'RIGHT') {
+        var dx = (resolved === 'LEFT') ? -1 : (resolved === 'RIGHT') ? 1 : 0;
+        var dy = (resolved === 'UP') ? -1 : (resolved === 'DOWN') ? 1 : 0;
+        var newX = hero.x + dx * map.tsize;
+        var newY = hero.y + dy * map.tsize;
+        var checkX = newX - map.tsize / 2;
+        var checkY = newY - map.tsize / 2;
+        if (!map.isSolidTileAtXY(checkX, checkY)) {
+            hero.x = newX;
+            hero.y = newY;
+            hero.xGrid = Math.floor(checkX / map.tsize);
+            hero.yGrid = Math.floor(checkY / map.tsize);
+        }
+        // Met à jour la direction du hero
+        if (resolved === 'DOWN') hero.direction = Direction.Down;
+        else if (resolved === 'UP') hero.direction = Direction.Up;
+        else if (resolved === 'LEFT') hero.direction = Direction.Left;
+        else if (resolved === 'RIGHT') hero.direction = Direction.Right;
+        hero.gridDirection = hero.direction;
+        // Téléporteurs
+        checkTeleporter(false);
+    } else if (resolved === 'TURN_LEFT') {
+        if (hero.direction === Direction.Down) hero.direction = Direction.Right;
+        else if (hero.direction === Direction.Right) hero.direction = Direction.Up;
+        else if (hero.direction === Direction.Up) hero.direction = Direction.Left;
+        else if (hero.direction === Direction.Left) hero.direction = Direction.Down;
+        hero.gridDirection = hero.direction;
+    } else if (resolved === 'COLLECT_GEM') {
+        var hx = hero.x - map.tsize / 2;
+        var hy = hero.y - map.tsize / 2;
+        for (var g = 0; g < Game.gems.length; g++) {
+            var gem = Game.gems[g];
+            if (gem.x === hx && gem.y === hy && !gem.collected) {
+                gem.collected = true;
+                gem.gridCollected = true;
+                break;
+            }
+        }
+    } else if (resolved === 'TOGGLE_SWITCH') {
+        var sx = hero.x - map.tsize / 2;
+        var sy = hero.y - map.tsize / 2;
+        for (var s = 0; s < Game.switches.length; s++) {
+            var sw = Game.switches[s];
+            if (sw.x === sx && sw.y === sy) {
+                sw.toggle();
+                sw.gridState = sw.state;
+                break;
+            }
+        }
+    }
+}
+
+// Scrub vers le pas K : applique le snapshot[K], reconstruit la file restante.
+Game.scrubToStep = function(targetStep) {
+    if (!this.snapshots || !this.allActions) return;
+    var K = Math.max(0, Math.min(this.totalSteps, parseInt(targetStep) || 0));
+    _applySnapshot(this.snapshots[K]);
+    // Reconstruit la file avec des CLONES (sinon AVANCER muterait allActions).
+    this.actionQueue = this.allActions.slice(K).map(a => ({ action: a.action, line: a.line }));
+    this.currentStep = K;
+    this.paused = true;
+    this.stepOnce = false;
+    _emitGameEvent('algomaze:step', { step: K, total: this.totalSteps });
+    _emitGameEvent('algomaze:pause-state', { paused: true });
+    _emitGameEvent('algomaze:current-line', { line: this.actionQueue[0] ? this.actionQueue[0].line : null });
+};
+
 function solve(code)
 {
     Game.reset();
     Game.displayRandomTile = false;
-    eval(code);
+
+    eval(code);  // remplit Game.actionQueue avec les actions de l'élève
+
+    // Sauvegarde la séquence complète pour permettre le scrub.
+    Game.allActions = Game.actionQueue.slice();
+    Game.totalSteps = Game.allActions.length;
+    Game.currentStep = 0;
+
+    // Dry-run : on remet la scène à zéro et on capture le snapshot à chaque pas.
+    Game.hero.resetPosition();
+    Game.initializeGemsAndSwitches();
+    Game._showThinking = false;
+
+    Game.snapshots = [_captureSnapshot()];
+    for (var i = 0; i < Game.allActions.length; i++) {
+        _applyActionInstantly(Game.allActions[i].action);
+        Game.snapshots.push(_captureSnapshot());
+    }
+
+    // Restaure l'état initial (snapshot 0) pour que l'animation joue depuis le début.
+    _applySnapshot(Game.snapshots[0]);
+
+    _emitGameEvent('algomaze:execution-start', { total: Game.totalSteps });
+    _emitGameEvent('algomaze:step', { step: 0, total: Game.totalSteps });
 }
 
 function getRandomBinary() {

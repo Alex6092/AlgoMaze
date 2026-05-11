@@ -578,12 +578,21 @@ canvas#maze {
     cursor: not-allowed;
     pointer-events: none;
 }
-/* Boutons de contrôle d'exécution (pause / step / stop) — texte/emoji, plus petits */
+/* Boutons de contrôle d'exécution (pause / step / stop) — SVG inline, themeable */
 .icon-btn.exec-ctrl {
-    font-size: 1.1rem;
-    line-height: 1;
+    color: var(--text);
     padding: 0;
 }
+.icon-btn.exec-ctrl svg { display: block; }
+.icon-btn.exec-ctrl:disabled,
+.icon-btn.exec-ctrl.disabled {
+    opacity: 0.35;
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+/* Override l'opacité globale de icon-btn pour qu'on voie quand même les boutons inactifs. */
+.icon-btn.exec-ctrl.disabled,
+.icon-btn.exec-ctrl:disabled { pointer-events: none; }
 
 /* Slider de vitesse */
 .speed-control {
@@ -610,6 +619,31 @@ canvas#maze {
     min-width: 30px;
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+/* Barre de progression du scrub d'exécution */
+.exec-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface);
+}
+.exec-progress.disabled { opacity: 0.5; }
+.exec-progress input[type="range"] {
+    flex: 1;
+    accent-color: var(--primary);
+    margin: 0;
+}
+.exec-step-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    min-width: 70px;
 }
 
 /* Ligne en cours d'exécution dans CodeMirror */
