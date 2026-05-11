@@ -1,7 +1,7 @@
 import express from 'express';
 const router = express.Router();
 import bcrypt from 'bcrypt';
-import { generateToken, verifyToken, userFromToken } from '../jwtConfig.js';
+import { generateToken, verifyToken, userFromToken, TOKEN_COOKIE_OPTIONS, requireUser, requireAdmin } from '../jwtConfig.js';
 import redisClient from '../redisClient.js';
 import config from '../config.json' assert { type: 'json' };
 
@@ -43,10 +43,8 @@ router.post('/register', async (req, res) => {
 router.put('/updatepassword', async (req, res) => {
     try
     {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
-
-        if(user.isAdmin)
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
         {
             const userData = req.body;
             var userToUpdate = userData;
@@ -69,10 +67,6 @@ router.put('/updatepassword', async (req, res) => {
                 res.status(500).send({ error: 'User ' + username + ' does not exists !'});
             }
         }
-        else
-        {
-            res.status(403).send({ error: 'You are not an administrator'});
-        }
     } catch (error) {
         console.log("[ERROR] /user/updatepassword " + error);
         res.status(500).send({ error: 'Failed to update user password' });
@@ -92,10 +86,7 @@ router.post('/login', async (req, res) => {
             if (!isMatch) return res.status(401).send({ error: 'Invalid credentials' });
 
             const token = generateToken(username);
-            res.cookie('token', token, {
-                httpOnly: false,
-                secure: false
-            });
+            res.cookie('token', token, TOKEN_COOKIE_OPTIONS);
             res.send({ token });
         }
         else
@@ -118,8 +109,9 @@ router.post('/logout', (req, res) => {
 // Récupère le profil de l'utilisateur courant (utilisé par l'app shell pour conditionnellement afficher la nav admin).
 router.get('/me', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        const { user } = ctx;
         res.send({
             username: user.username,
             isAdmin: !!user.isAdmin,
@@ -127,16 +119,16 @@ router.get('/me', async (req, res) => {
         });
     } catch (error) {
         console.log("[ERROR] /user/me " + error);
-        res.status(401).send({ error: 'Not authenticated' });
+        res.status(500).send({ error: 'Error retrieving profile' });
     }
 });
 
 // Get user progress
 router.get('/progress', async (req, res) => {
     try {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
-        res.send({progress: user.lastCompletedLevel});
+        const ctx = await requireUser(req, res);
+        if (!ctx) return;
+        res.send({ progress: ctx.user.lastCompletedLevel });
     } catch (error) {
         console.log("[ERROR] /user/progress " + error);
         res.status(500).send({ error: 'Error retrieving progress' });
@@ -146,10 +138,9 @@ router.get('/progress', async (req, res) => {
 router.delete('/delete', async(req, res) => {
     try
     {
-        const token = req.headers.authorization.split(" ")[1];
-        const user = await userFromToken(token);
-
-        if(user.isAdmin)
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
+        const user = ctx.user;
         {
             const userData = req.body;
             var userToDelete = userData;
@@ -200,10 +191,6 @@ router.delete('/delete', async(req, res) => {
             {
                 res.status(403).send({ error: 'You cannot delete yourself !'});
             }
-        }
-        else
-        {
-            res.status(403).send({ error: 'You are not an administrator'});
         }
     } catch (error) {
         console.log("[ERROR] /user/delete " + error);

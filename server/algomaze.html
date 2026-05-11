@@ -371,6 +371,18 @@
                             credentials: 'include'
                         });
 
+                        // Distinguer une erreur HTTP (auth, serveur) d'un résultat fonctionnel.
+                        // Sans ça, un 500 retournait `{ error: "..." }` qui se faisait évaluer
+                        // comme "solution invalide" — message trompeur pour l'étudiant.
+                        if (!response.ok) {
+                            if (response.status === 401) {
+                                // L'intercepteur global gère déjà la redirection vers /login.
+                                return;
+                            }
+                            showNotification('Erreur serveur (' + response.status + '). Réessaie dans un instant.', 'error');
+                            return;
+                        }
+
                         let result = await response.json();
 
                         if (result === true) {

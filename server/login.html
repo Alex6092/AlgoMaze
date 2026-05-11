@@ -70,6 +70,14 @@
             setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
         });
 
+        // Affiche un message d'accueil si l'utilisateur arrive ici après une expiration de session.
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('expired') === '1') {
+                setTimeout(() => showNotification('Ta session a expiré. Reconnecte-toi pour continuer.', 'error'), 100);
+            }
+        })();
+
         document.getElementById('login-form').addEventListener('submit', async function(event) {
             event.preventDefault();
             const username = document.getElementById('username').value;
