@@ -2,6 +2,7 @@ import express from 'express';
 const router = express.Router();
 import bcrypt from 'bcrypt';
 import { generateToken, verifyToken, userFromToken, TOKEN_COOKIE_OPTIONS, requireUser, requireAdmin } from '../jwtConfig.js';
+import { loginLimiter } from '../rateLimit.js';
 import redisClient from '../redisClient.js';
 import config from '../config.json' assert { type: 'json' };
 
@@ -73,8 +74,8 @@ router.put('/updatepassword', async (req, res) => {
     }
 });
 
-// User login
-router.post('/login', async (req, res) => {
+// User login (rate-limité pour bloquer le brute-force par couple IP+username)
+router.post('/login', loginLimiter, async (req, res) => {
     try {
         var { username, password } = req.body;
         username = username.toLowerCase();

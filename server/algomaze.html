@@ -333,6 +333,15 @@
                                 body: JSON.stringify({ levelId, code, signals: snapshotSignals() }),
                                 credentials: 'include'
                             });
+                            if (response.status === 429) {
+                                const data = await response.json().catch(() => ({}));
+                                showNotification(data.error || 'Trop d\'exécutions consécutives. Patiente un instant.', 'error');
+                                return;
+                            }
+                            if (response.status === 401) {
+                                // L'intercepteur global redirige vers /login.
+                                return;
+                            }
                             let outcome = await response.json();
                             if (outcome.timeout) {
                                 showNotification('Exécution bloquée : ' + outcome.error + ' Corrige tes boucles avant de relancer.', 'error');
@@ -377,6 +386,11 @@
                         if (!response.ok) {
                             if (response.status === 401) {
                                 // L'intercepteur global gère déjà la redirection vers /login.
+                                return;
+                            }
+                            if (response.status === 429) {
+                                const data = await response.json().catch(() => ({}));
+                                showNotification(data.error || 'Trop de soumissions consécutives. Patiente quelques secondes.', 'error');
                                 return;
                             }
                             showNotification('Erreur serveur (' + response.status + '). Réessaie dans un instant.', 'error');

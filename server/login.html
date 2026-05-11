@@ -90,6 +90,9 @@
                 });
                 if (!response.ok) {
                     const data = await response.json().catch(() => ({}));
+                    if (response.status === 429) {
+                        throw new Error(data.error || 'Trop de tentatives. Réessaie dans quelques minutes.');
+                    }
                     throw new Error(data.error || 'Identifiants incorrects');
                 }
                 const data = await response.json();
