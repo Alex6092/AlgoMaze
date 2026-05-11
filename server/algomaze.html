@@ -63,6 +63,14 @@
                             <button class="icon-btn" id="submit-button" type="button" title="Vérifier la solution">
                                 <img src="/assets/verify.png" alt="">
                             </button>
+                            <button class="icon-btn exec-ctrl" id="pause-button" type="button" title="Pause / Reprendre" disabled>⏸</button>
+                            <button class="icon-btn exec-ctrl" id="step-button" type="button" title="Pas suivant" disabled>⏭</button>
+                            <button class="icon-btn exec-ctrl" id="stop-button" type="button" title="Arrêter / Réinitialiser" disabled>⏹</button>
+                            <div class="speed-control">
+                                <label for="speed-slider" class="speed-label">Vitesse</label>
+                                <input type="range" id="speed-slider" min="0.25" max="3" step="0.25" value="1">
+                                <span id="speed-value">1×</span>
+                            </div>
                             <button id="next-level-button" type="button">Niveau suivant ➡</button>
                         </div>
 
@@ -233,6 +241,66 @@
                     mode: "javascript",
                     theme: "default"
                 });
+
+                // ----- Visualiseur pas-à-pas : surlignage de la ligne en cours -----
+                let _highlightedLine = null;
+                function setHighlightedLine(line) {
+                    if (_highlightedLine !== null) {
+                        editor.removeLineClass(_highlightedLine, 'background', 'cm-exec-line');
+                        editor.removeLineClass(_highlightedLine, 'gutter', 'cm-exec-gutter');
+                        _highlightedLine = null;
+                    }
+                    if (line != null && line >= 1) {
+                        const idx = line - 1; // CodeMirror est 0-indexé
+                        editor.addLineClass(idx, 'background', 'cm-exec-line');
+                        editor.addLineClass(idx, 'gutter', 'cm-exec-gutter');
+                        _highlightedLine = idx;
+                    }
+                }
+                document.addEventListener('algomaze:current-line', (e) => setHighlightedLine(e.detail && e.detail.line));
+                document.addEventListener('algomaze:execution-end', () => setHighlightedLine(null));
+
+                // ----- Contrôles d'exécution : pause / step / stop / vitesse -----
+                const pauseBtn = document.getElementById('pause-button');
+                const stepBtn  = document.getElementById('step-button');
+                const stopBtn  = document.getElementById('stop-button');
+                const speedSlider = document.getElementById('speed-slider');
+                const speedValue  = document.getElementById('speed-value');
+
+                function setControlsEnabled(execActive) {
+                    pauseBtn.disabled = !execActive;
+                    stepBtn.disabled  = !execActive;
+                    stopBtn.disabled  = !execActive;
+                }
+                function updatePauseButton() {
+                    const paused = !!(window.Game && Game.paused);
+                    pauseBtn.textContent = paused ? '▶' : '⏸';
+                    pauseBtn.title = paused ? 'Reprendre' : 'Pause';
+                }
+
+                pauseBtn.addEventListener('click', () => { if (window.Game) Game.togglePause(); });
+                stepBtn.addEventListener('click', () => { if (window.Game) Game.step(); });
+                stopBtn.addEventListener('click', () => {
+                    if (window.Game) {
+                        Game.reset();
+                        Game.displayRandomTile = true;
+                        setControlsEnabled(false);
+                    }
+                });
+                speedSlider.addEventListener('input', () => {
+                    const v = parseFloat(speedSlider.value);
+                    speedValue.textContent = v + '×';
+                    if (window.Game) Game.setSpeed(v);
+                });
+
+                // Quand une exécution démarre (file remplie après /precheck OK), on active les contrôles.
+                // Quand elle se termine (event execution-end), on les désactive.
+                document.addEventListener('algomaze:current-line', (e) => {
+                    if (e.detail && e.detail.line != null) setControlsEnabled(true);
+                });
+                document.addEventListener('algomaze:execution-end', () => setControlsEnabled(false));
+                document.addEventListener('algomaze:pause-state', updatePauseButton);
+                document.addEventListener('algomaze:reset', () => setControlsEnabled(false));
 
                 // Listener "paste" : CodeMirror étiquette les changements provenant d'un coller.
                 editor.on('change', (cm, change) => {

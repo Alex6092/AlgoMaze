@@ -578,6 +578,53 @@ canvas#maze {
     cursor: not-allowed;
     pointer-events: none;
 }
+/* Boutons de contrôle d'exécution (pause / step / stop) — texte/emoji, plus petits */
+.icon-btn.exec-ctrl {
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0;
+}
+
+/* Slider de vitesse */
+.speed-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 4px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.speed-control input[type="range"] {
+    width: 100px;
+    accent-color: var(--primary);
+    margin: 0;
+}
+.speed-control .speed-label { user-select: none; }
+.speed-control #speed-value {
+    font-weight: 600;
+    color: var(--text);
+    min-width: 30px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Ligne en cours d'exécution dans CodeMirror */
+.CodeMirror .cm-exec-line {
+    background-color: rgba(99, 102, 241, 0.18) !important;
+}
+.CodeMirror .cm-exec-gutter {
+    background-color: rgba(99, 102, 241, 0.35) !important;
+}
+[data-theme="dark"] .CodeMirror .cm-exec-line {
+    background-color: rgba(129, 140, 248, 0.22) !important;
+}
+[data-theme="dark"] .CodeMirror .cm-exec-gutter {
+    background-color: rgba(129, 140, 248, 0.45) !important;
+}
 .icon-btn img {
     width: 22px;
     height: 22px;

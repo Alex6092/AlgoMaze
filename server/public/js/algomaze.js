@@ -379,12 +379,45 @@ Game.init = function () {
     this.hero = new Hero(map);
     this.initializeGemsAndSwitches();
     this.displayRandomTile = true;
+    // État du visualiseur pas-à-pas.
+    this.paused = false;          // si vrai, l'update boucle sans consommer la file
+    this.speed = 1;               // multiplicateur de vitesse (sur delta de l'animation)
+    this.stepOnce = false;        // sur clic "Pas suivant" : autorise un seul cran puis re-pause
+    this.currentActionLine = null;// ligne source de l'action en cours d'exécution
 };
 
+// Émet un CustomEvent vers le DOM pour que l'UI puisse réagir (surlignage ligne, etc.).
+function _emitGameEvent(type, detail) {
+    try { document.dispatchEvent(new CustomEvent(type, { detail })); } catch (e) {}
+}
+
 Game.update = function (delta) {
+    // Pause : on bloque la consommation de la file, mais le rendu continue.
+    if (this.paused && !this.stepOnce) return;
+
+    // Ajuste la vitesse d'animation : delta × multiplicateur.
+    var effectiveDelta = delta * (this.speed || 1);
+
     if(this.actionQueue.length > 0)
     {
-        var actionName = this.actionQueue[0];
+        var head = this.actionQueue[0];
+        // Pour rétro-compatibilité, les actions peuvent être soit des strings (legacy)
+        // soit des objets { action, line }. On normalise.
+        var actionName = typeof head === 'string' ? head : head.action;
+        var actionLine = typeof head === 'string' ? null : head.line;
+
+        // À chaque NOUVELLE action en tête de file, on signale la ligne source.
+        if (actionLine !== this.currentActionLine) {
+            this.currentActionLine = actionLine;
+            _emitGameEvent('algomaze:current-line', { line: actionLine });
+        }
+
+        // Mode pas-à-pas : on consomme une action et on re-pause aussitôt.
+        if (this.stepOnce) this.stepOnce = false, this.paused = true;
+
+        // Délègue le traitement de l'action (legacy : on utilise actionName pour le switch).
+        delta = effectiveDelta;
+        // (le code legacy ci-dessous lit delta, on continue avec effectiveDelta).
 
         if(actionName == "DOWN")
         {
@@ -417,7 +450,11 @@ Game.update = function (delta) {
         else if(actionName == "AVANCER")
         {
             var direction = this.hero.direction;
-            this.actionQueue[0] = direction.toUpperCase();
+            var newAction = direction.toUpperCase();
+            // Préserve l'info de ligne source quand on remplace AVANCER par DOWN/UP/LEFT/RIGHT.
+            this.actionQueue[0] = (typeof head === 'object')
+                ? { action: newAction, line: head.line }
+                : newAction;
         }
         else if(actionName == "TURN_LEFT")
         {
@@ -458,10 +495,17 @@ Game.update = function (delta) {
         }
     }
 
+    // File vidée : on émet un event "fin d'exécution" et on retire le surlignage de ligne.
+    if (this.actionQueue.length === 0 && this.currentActionLine !== null) {
+        this.currentActionLine = null;
+        _emitGameEvent('algomaze:current-line', { line: null });
+        _emitGameEvent('algomaze:execution-end', {});
+    }
+
     if(this.actionQueue.length == 0 && Game.displayRandomTile == false)
     {
         setTimeout(() => {
-            if(this.actionQueue.length == 0 && Game.displayRandomTile == false) 
+            if(this.actionQueue.length == 0 && Game.displayRandomTile == false)
             {
                 Game.displayRandomTile = true;
                 Game.reset();
@@ -573,13 +617,55 @@ Game.render = function () {
     this._drawGrid();
 };
 
+// Récupère la ligne du code utilisateur d'où la fonction a été appelée.
+// Marche en parcourant la stack trace de haut en bas et en gardant la PREMIÈRE
+// frame qui pointe vers `<anonymous>:LINE` — le code utilisateur passé à eval().
+function _getUserLineFromStack() {
+    try {
+        var stack = new Error().stack || '';
+        var lines = stack.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+            var m = lines[i].match(/<anonymous>:(\d+):\d+/);
+            if (m) return parseInt(m[1], 10);
+        }
+    } catch (e) {}
+    return null;
+}
+
 Game.queueAction = function(actionName) {
-    this.actionQueue.push(actionName);
+    // Chaque action garde la ligne source qui l'a déclenchée pour le surlignage.
+    this.actionQueue.push({ action: actionName, line: _getUserLineFromStack() });
+};
+
+// ----- Contrôles du visualiseur pas-à-pas -----
+Game.setPaused = function(paused) {
+    this.paused = !!paused;
+    this.stepOnce = false;
+    _emitGameEvent('algomaze:pause-state', { paused: this.paused });
+};
+Game.togglePause = function() { this.setPaused(!this.paused); };
+Game.step = function() {
+    // Force la consommation d'UNE action puis re-pause.
+    if (this.actionQueue.length === 0) return;
+    this.stepOnce = true;
+};
+Game.setSpeed = function(multiplier) {
+    this.speed = Math.max(0.1, Math.min(10, Number(multiplier) || 1));
+    _emitGameEvent('algomaze:speed', { speed: this.speed });
 };
 
 Game.reset = function() {
     this.actionQueue = [];
     this.hero.resetPosition();
+    // Reset propre du visualiseur.
+    this.paused = false;
+    this.stepOnce = false;
+    if (this.currentActionLine !== null) {
+        this.currentActionLine = null;
+        _emitGameEvent('algomaze:current-line', { line: null });
+    }
+    _emitGameEvent('algomaze:pause-state', { paused: false });
+    _emitGameEvent('algomaze:reset', {});
     /*
     for(var i = 0; i < this.switches.length; i++)
     {
