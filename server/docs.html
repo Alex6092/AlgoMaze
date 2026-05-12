@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <title>Documentation — AlgoMaze</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/assets/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script src="/js/auth.js"></script>
+    <script src="/js/app-shell.js"></script>
+</head>
+
+<body>
+
+    <main class="app-main">
+        <h1 class="page-title">Documentation des fonctions</h1>
+        <p class="page-subtitle">Toutes les fonctions disponibles pour piloter ton robot dans AlgoMaze.</p>
+
+        <section class="docs-section">
+            <h2 class="docs-section-title">🚶 Déplacement</h2>
+            <div class="docs-grid">
+                <article class="docs-card">
+                    <div class="docs-sig">moveForward<span class="docs-paren">()</span></div>
+                    <span class="docs-return void">action</span>
+                    <p class="docs-desc">Fait avancer le robot d'une case dans la direction actuelle. Si un mur lui fait face, le robot ne bouge pas (mais ta solution est considérée comme incorrecte au moment de la validation).</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-sig">turnLeft<span class="docs-paren">()</span></div>
+                    <span class="docs-return void">action</span>
+                    <p class="docs-desc">Fait tourner le robot de 90° vers la gauche, sur place. Pour tourner à droite, tu peux enchaîner trois <code>turnLeft()</code>.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2 class="docs-section-title">💎 Gemmes</h2>
+            <div class="docs-grid">
+                <article class="docs-card">
+                    <div class="docs-sig">collectGem<span class="docs-paren">()</span></div>
+                    <span class="docs-return void">action</span>
+                    <p class="docs-desc">Ramasse la gemme située sur la case actuelle du robot. Sans effet s'il n'y a pas de gemme à cet endroit.</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-sig">canCollectGem<span class="docs-paren">()</span></div>
+                    <span class="docs-return bool">booléen</span>
+                    <p class="docs-desc">Renvoie <code>true</code> si une gemme non ramassée se trouve sur la case actuelle, <code>false</code> sinon.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2 class="docs-section-title">🔘 Interrupteurs</h2>
+            <div class="docs-grid">
+                <article class="docs-card">
+                    <div class="docs-sig">toggleSwitch<span class="docs-paren">()</span></div>
+                    <span class="docs-return void">action</span>
+                    <p class="docs-desc">Bascule l'interrupteur situé sur la case actuelle (allumé ↔ éteint). Sans effet s'il n'y a pas d'interrupteur ici.</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-sig">isOnSwitch<span class="docs-paren">()</span></div>
+                    <span class="docs-return bool">booléen</span>
+                    <p class="docs-desc">Renvoie <code>true</code> si le robot est positionné sur un interrupteur (allumé ou éteint).</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-sig">canActivateSwitch<span class="docs-paren">()</span></div>
+                    <span class="docs-return bool">booléen</span>
+                    <p class="docs-desc">Renvoie <code>true</code> si la case actuelle contient un interrupteur <b>éteint</b> (qui peut donc être allumé).</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-sig">canDeactivateSwitch<span class="docs-paren">()</span></div>
+                    <span class="docs-return bool">booléen</span>
+                    <p class="docs-desc">Renvoie <code>true</code> si la case actuelle contient un interrupteur <b>allumé</b> (qui peut donc être éteint).</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2 class="docs-section-title">🧱 Détection d'obstacles</h2>
+            <div class="docs-grid">
+                <article class="docs-card">
+                    <div class="docs-sig">isBlocked<span class="docs-paren">()</span></div>
+                    <span class="docs-return bool">booléen</span>
+                    <p class="docs-desc">Renvoie <code>true</code> si la case <b>devant</b> le robot (dans sa direction actuelle) est un mur ou hors du labyrinthe.</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-sig">isBlockedLeft<span class="docs-paren">()</span></div>
+                    <span class="docs-return bool">booléen</span>
+                    <p class="docs-desc">Renvoie <code>true</code> si la case <b>à gauche</b> du robot (relative à sa direction actuelle) est un mur.</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-sig">isBlockedRight<span class="docs-paren">()</span></div>
+                    <span class="docs-return bool">booléen</span>
+                    <p class="docs-desc">Renvoie <code>true</code> si la case <b>à droite</b> du robot (relative à sa direction actuelle) est un mur.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2 class="docs-section-title">💡 Astuces JavaScript</h2>
+            <div class="docs-grid docs-tips">
+                <article class="docs-card">
+                    <div class="docs-tip-title">Boucles</div>
+                    <p class="docs-desc">Pour répéter une action : <code>for (let i = 0; i &lt; 3; i++) { moveForward(); }</code> ou <code>while (!isBlocked()) { moveForward(); }</code>.</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-tip-title">Conditions</div>
+                    <p class="docs-desc">Pour réagir à l'environnement : <code>if (canCollectGem()) { collectGem(); }</code> ou <code>if (isBlocked()) { turnLeft(); }</code>.</p>
+                </article>
+
+                <article class="docs-card">
+                    <div class="docs-tip-title">Fonctions</div>
+                    <p class="docs-desc">Pour factoriser une suite d'actions, définis tes propres fonctions et appelle-les :<br><code>function tournerADroite() { turnLeft(); turnLeft(); turnLeft(); }</code></p>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <div id="notification-container"></div>
+</body>
+</html>
