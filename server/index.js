@@ -193,6 +193,15 @@ app.get('/docs', (req, res) => {
     res.sendFile(__dirname + '/docs.html');
 });
 
+// Seuils publics utilisés par la page /docs pour afficher les paliers de maîtrise.
+app.get('/api/docs-config', (req, res) => {
+    res.json({
+        masteryThresholds: config.masteryThresholds || { fragile: 20, satisfaisante: 40, tresBonne: 70 },
+        totalLevels: config.totalLevels || 42,
+        slidingMedianWindow: config.slidingMedianWindow || 10
+    });
+});
+
 app.get('/editor', async (req, res) => {
     const token = req.cookies.token;
     if (token) {

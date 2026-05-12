@@ -106,6 +106,88 @@
         </section>
 
         <section class="docs-section">
+            <h2 class="docs-section-title">🏅 Badges par niveau</h2>
+            <p class="docs-section-intro">À chaque niveau validé, l'IA évalue ta solution et lui attribue un badge selon son score (0–100). <strong>Seul ton meilleur résultat est conservé</strong> : refaire un niveau ne peut jamais faire baisser ton badge.</p>
+            <div class="docs-grid docs-badges">
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="badge Platine">Platine</span><span class="docs-badge-xp">200 XP</span></div>
+                    <p class="docs-desc">Score ≥ 80 <em>et</em> contraintes pédagogiques respectées. La solution est élégante, efficace et met en œuvre les concepts attendus du niveau.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="badge Or">Or</span><span class="docs-badge-xp">100 XP</span></div>
+                    <p class="docs-desc">Score ≥ 60 <em>et</em> contraintes respectées. Solution correcte et de bonne qualité.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="badge Argent">Argent</span><span class="docs-badge-xp">50 XP</span></div>
+                    <p class="docs-desc">Score ≥ 40 <em>et</em> contraintes respectées. Solution fonctionnelle mais perfectible.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="badge Bronze">Bronze</span><span class="docs-badge-xp">25 XP</span></div>
+                    <p class="docs-desc">Score ≥ 20. Plafond maximum si les contraintes pédagogiques ne sont pas respectées (solution qui fonctionne mais n'utilise pas les concepts attendus).</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="badge Fer">Fer</span><span class="docs-badge-xp">10 XP</span></div>
+                    <p class="docs-desc">Score ≥ 0. La solution arrive à la sortie mais présente des lacunes importantes.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2 class="docs-section-title">🎖️ Rangs globaux</h2>
+            <p class="docs-section-intro">Le rang reflète la <strong>qualité récente</strong> de tes solutions. Il est calculé à partir de la <strong>médiane glissante des XP</strong> obtenus sur tes <span id="cfg-window">10</span> derniers niveaux validés — pas une moyenne sur l'ensemble du parcours, ce qui signifie que progresser sur les niveaux récents peut faire monter ton rang même si tes premiers niveaux étaient faibles.</p>
+            <div class="docs-grid docs-badges">
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="rank-pill rank-legende">Légende</span></div>
+                    <p class="docs-desc">Médiane ≥ 150 XP — tu combines avancement ET qualité Platine de façon constante.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="rank-pill rank-maitre">Maître</span></div>
+                    <p class="docs-desc">Médiane ≥ 100 XP — tes solutions récentes sont globalement de niveau Or ou Platine.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="rank-pill rank-expert">Expert</span></div>
+                    <p class="docs-desc">Médiane ≥ 60 XP — tu réussis bien mais avec quelques solutions moins abouties.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="rank-pill rank-initie">Initié</span></div>
+                    <p class="docs-desc">Médiane ≥ 30 XP — tu progresses, les bases sont là.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="rank-pill rank-apprenti">Apprenti</span></div>
+                    <p class="docs-desc">Médiane ≥ 0 XP — point de départ de tout le monde. Continue à t'entraîner !</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="docs-section">
+            <h2 class="docs-section-title">📊 Niveau de maîtrise global</h2>
+            <p class="docs-section-intro">Le <strong>niveau de maîtrise</strong> affiché dans l'en-tête combine ton avancement dans le parcours <em>et</em> la qualité de tes solutions. Il est calculé ainsi :</p>
+            <div class="docs-mastery-formula">
+                <code>Score de maîtrise = (XP total gagné) / (<span id="cfg-levels">42</span> niveaux × 200 XP) × 100</code>
+            </div>
+            <p class="docs-section-intro">Ainsi, compléter plus de niveaux <em>et</em> obtenir de meilleurs badges font tous les deux monter le score. Il ne peut jamais baisser.</p>
+            <div class="docs-grid docs-badges">
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="mastery-badge green">Très bonne maîtrise</span></div>
+                    <p class="docs-desc">Score ≥ <span id="cfg-thr-tresBonne">70</span> % — tu as validé une grande partie du parcours avec une qualité élevée.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="mastery-badge blue">Maîtrise satisfaisante</span></div>
+                    <p class="docs-desc">Score ≥ <span id="cfg-thr-satisfaisante">40</span> % — bon équilibre entre avancement et qualité.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="mastery-badge amber">Maîtrise fragile</span></div>
+                    <p class="docs-desc">Score ≥ <span id="cfg-thr-fragile">20</span> % — tu as démarré mais il reste beaucoup de marge de progression.</p>
+                </article>
+                <article class="docs-card docs-badge-card">
+                    <div class="docs-badge-row"><span class="mastery-badge red">Maîtrise insuffisante</span></div>
+                    <p class="docs-desc">Score &lt; <span id="cfg-thr-fragile-2">20</span> % — continue, chaque niveau validé fait monter le score !</p>
+                </article>
+            </div>
+            <p class="docs-section-intro" style="margin-top:1rem">L'en-tête affiche également ton <strong>avancement</strong> (Niv. X/<span id="cfg-levels-2">42</span>) et ton <strong>rang</strong> (basé sur la médiane des <span id="cfg-window-2">10</span> derniers niveaux), mis à jour après chaque évaluation IA.</p>
+        </section>
+
+        <section class="docs-section">
             <h2 class="docs-section-title">💡 Astuces JavaScript</h2>
             <div class="docs-grid docs-tips">
                 <article class="docs-card">
@@ -127,5 +209,19 @@
     </main>
 
     <div id="notification-container"></div>
+    <script>
+        fetch('/api/docs-config').then(r => r.json()).then(cfg => {
+            const thr = cfg.masteryThresholds || {};
+            const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.textContent = val; };
+            set('cfg-thr-tresBonne',    thr.tresBonne);
+            set('cfg-thr-satisfaisante',thr.satisfaisante);
+            set('cfg-thr-fragile',      thr.fragile);
+            set('cfg-thr-fragile-2',    thr.fragile);
+            set('cfg-levels',           cfg.totalLevels);
+            set('cfg-levels-2',         cfg.totalLevels);
+            set('cfg-window',           cfg.slidingMedianWindow);
+            set('cfg-window-2',         cfg.slidingMedianWindow);
+        }).catch(() => {}); // valeurs par défaut déjà dans le HTML
+    </script>
 </body>
 </html>

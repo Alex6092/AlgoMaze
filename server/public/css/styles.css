@@ -1021,6 +1021,57 @@ canvas#maze {
     font-size: 0.95rem;
     color: var(--text);
 }
+.docs-section-intro {
+    margin: -4px 0 16px;
+    color: var(--text-muted);
+    font-size: 0.93rem;
+    line-height: 1.6;
+    max-width: 72ch;
+}
+.docs-badges {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.docs-badge-card {
+    gap: 10px;
+}
+.docs-badge-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.docs-badge-xp {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+}
+.rank-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 12px;
+    border-radius: var(--r-full);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1.5px solid transparent;
+}
+.rank-pill.rank-legende  { background: linear-gradient(135deg, #a78bfa, #7c3aed); color: #fff; }
+.rank-pill.rank-maitre   { background: linear-gradient(135deg, #f472b6, #db2777); color: #fff; }
+.rank-pill.rank-expert   { background: linear-gradient(135deg, #5dd9c8, #2bbbad); color: #fff; }
+.rank-pill.rank-initie   { background: var(--primary-soft); color: var(--primary); border-color: rgba(99,102,241,0.3); }
+.rank-pill.rank-apprenti { background: var(--surface-hover); color: var(--text-muted); border-color: var(--border); }
+.docs-mastery-formula {
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 10px 16px;
+    margin: 0 0 16px;
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.88rem;
+    color: var(--primary);
+}
 
 /* ---------- Live dashboard (vue temps réel enseignant) ---------- */
 .live-controls {
