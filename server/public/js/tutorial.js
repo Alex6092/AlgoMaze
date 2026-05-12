@@ -46,10 +46,22 @@
             body: 'Deux boutons importants :<br>▶ <b>Run</b> exécute ton code en local pour <i>tester</i> sans valider.<br>✓ <b>Submit</b> envoie la solution au serveur pour <i>valider</i> le niveau (et déclencher l\'évaluation IA).'
         },
         {
+            selector: '.exec-progress',
+            placement: 'auto',
+            title: 'Visualiser pas à pas',
+            body: 'Pendant que ton code tourne, tu peux <b>mettre en pause</b> ⏸, <b>avancer pas à pas</b> ⏭, ou <b>tout arrêter</b> ⏹. Tu règles la <b>vitesse</b> à côté, et la <b>barre de progression</b> ci-dessous te permet de revenir en arrière instantanément. Idéal pour comprendre où ton algorithme se trompe.'
+        },
+        {
             selector: '.command-pills',
             placement: 'auto',
             title: 'Les fonctions du jeu',
-            body: 'Voici les fonctions disponibles. Clique sur l\'une d\'elles pour l\'insérer directement dans ton code, ou tape-la à la main.'
+            body: 'Voici les fonctions les plus utilisées. Clique sur l\'une d\'elles pour l\'insérer directement dans ton code, ou tape-la à la main.'
+        },
+        {
+            selector: null,
+            placement: 'center',
+            title: '📖 La documentation complète',
+            body: 'Toutes les fonctions disponibles (<code>moveForward</code>, <code>canCollectGem</code>, <code>isBlocked</code>…) sont décrites sur la <b>page Documentation</b> du menu en haut. À garder sous le coude pendant que tu codes.'
         },
         {
             selector: null,

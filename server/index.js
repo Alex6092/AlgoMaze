@@ -188,6 +188,11 @@ app.get('/maze', (req, res) => {
     res.sendFile(__dirname + '/algomaze.html');
 });
 
+// Documentation des fonctions du jeu (accessible à tous les utilisateurs authentifiés).
+app.get('/docs', (req, res) => {
+    res.sendFile(__dirname + '/docs.html');
+});
+
 app.get('/editor', async (req, res) => {
     const token = req.cookies.token;
     if (token) {

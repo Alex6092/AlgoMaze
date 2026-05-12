@@ -17,14 +17,16 @@
 
 window.AppShell = (function() {
     const STUDENT_LINKS = [
-        { href: '/maze', label: 'Jeu', match: ['/maze'] }
+        { href: '/maze', label: 'Jeu',           match: ['/maze'] },
+        { href: '/docs', label: 'Documentation', match: ['/docs'] }
     ];
     const ADMIN_LINKS = [
         { href: '/maze',      label: 'Jeu',                 match: ['/maze'] },
         { href: '/live',      label: 'Live',                match: ['/live'] },
         { href: '/progress',  label: 'Avancement',          match: ['/progress'] },
         { href: '/solutions', label: 'Solutions',           match: ['/solutions'] },
-        { href: '/editor',    label: 'Éditeur de niveaux',  match: ['/editor'] }
+        { href: '/editor',    label: 'Éditeur de niveaux',  match: ['/editor'] },
+        { href: '/docs',      label: 'Documentation',       match: ['/docs'] }
     ];
 
     function escapeHtml(s) {
