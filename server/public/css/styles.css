@@ -482,6 +482,10 @@ canvas#maze {
     overflow-y: auto;
 }
 .level-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 10px 14px;
     margin: 2px 0;
     border-radius: var(--r-sm);
@@ -491,6 +495,15 @@ canvas#maze {
     font-size: 0.92rem;
     transition: background 0.15s ease, color 0.15s ease;
     border-bottom: none;
+}
+.level-list li .level-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Variante compacte du badge dans la liste des niveaux : plus petit pour tenir dans la sidebar. */
+.level-list li .badge {
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    padding: 1px 8px;
+    letter-spacing: 0;
+    border-width: 1px;
 }
 .level-list li:hover {
     background: var(--surface-hover);

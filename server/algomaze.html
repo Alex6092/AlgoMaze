@@ -408,6 +408,15 @@
                     } else {
                         showNotification('Feedback IA prêt pour le niveau ' + payload.levelId, 'success');
                     }
+                    // Met à jour le badge local pour ce niveau et rafraîchit la liste
+                    // (l'élève voit son badge apparaître à côté du numéro de niveau).
+                    if (payload.result && payload.result.badge) {
+                        playerBadges[payload.levelId] = {
+                            badge: payload.result.badge,
+                            xp: payload.result.xp
+                        };
+                        displayLevels(levelsIds);
+                    }
                     // Met à jour le rang dans le header (géré par l'app shell).
                     if (window.AppShell) window.AppShell.refreshRank();
                 });
@@ -534,6 +543,21 @@
                 });
 
                 var levelsIds = [];
+                // Badges acquis par l'élève, indexés par numéro de niveau ({ badge, xp }).
+                // Rafraîchi au chargement et après chaque feedback IA reçu.
+                var playerBadges = {};
+
+                async function fetchBadges() {
+                    try {
+                        const r = await fetch('/user/badges', {
+                            headers: { 'Authorization': 'Bearer ' + token },
+                            credentials: 'include'
+                        });
+                        if (!r.ok) return;
+                        playerBadges = await r.json();
+                    } catch (e) { /* silent */ }
+                }
+
                 async function fetchLevels() {
                     try {
                         let response = await fetch('/levels', {
@@ -554,8 +578,12 @@
                     levelList.innerHTML = '';
                     levels.forEach(levelId => {
                         const li = document.createElement('li');
-                        li.textContent = `Niveau ${levelId}`;
                         li.setAttribute('data-level-id', levelId);
+                        const info = playerBadges[levelId];
+                        const badgeHtml = (info && info.badge)
+                            ? `<span class="badge ${escapeHtml(info.badge)}" title="${escapeHtml(info.badge)} · ${escapeHtml(info.xp)} XP">${escapeHtml(info.badge)}</span>`
+                            : '';
+                        li.innerHTML = `<span class="level-name">Niveau ${escapeHtml(levelId)}</span>${badgeHtml}`;
                         li.addEventListener('click', () => loadLevel(levelId, token));
                         levelList.appendChild(li);
                     });
@@ -638,6 +666,7 @@
                 const requestedLevelRaw = params.get('level');
                 const requestedLevel = requestedLevelRaw ? parseInt(requestedLevelRaw, 10) : null;
 
+                await fetchBadges();
                 await fetchLevels();
                 await fetchPlayerProgress(Number.isInteger(requestedLevel) ? requestedLevel : null);
 
