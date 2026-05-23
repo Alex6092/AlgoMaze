@@ -1,6 +1,11 @@
 <?php
-// Vue d'une activité Algomaze validation : redirige l'étudiant vers AlgoMaze
-// avec une URL signée HMAC pour l'authentifier automatiquement (SSO).
+// Vue d'une activité Algomaze validation : affiche la page Moodle avec
+//  - le statut de complétion (terminé / non terminé) calculé en appelant AlgoMaze
+//  - un bouton qui ouvre AlgoMaze dans un nouvel onglet via une URL signée HMAC (SSO)
+//
+// On n'utilise PLUS de redirection automatique : sans page Moodle visible,
+// l'étudiant ne voyait jamais le statut et le hook de complétion ne se
+// déclenchait pas (Moodle l'appelle au chargement d'une vue d'activité).
 
 require_once('../../config.php');
 require_once($CFG->dirroot.'/mod/algomazevalidation/lib.php');
@@ -27,7 +32,7 @@ $PAGE->set_url('/mod/algomazevalidation/view.php', array('id' => $cm->id));
 $PAGE->set_title(format_string($algomazevalidation->name));
 $PAGE->set_heading(format_string($course->fullname));
 
-// Met à jour l'état de complétion (vue) - inchangé.
+// Met à jour l'état "vu" (compte la consultation de la page comme une visite).
 $completion = new completion_info($course);
 if ($completion->is_enabled($cm)) {
     $completion->set_module_viewed($cm);
@@ -37,9 +42,19 @@ if ($completion->is_enabled($cm)) {
 $baseurl = trim((string)get_config('mod_algomazevalidation', 'baseurl'));
 $secret = (string)get_config('mod_algomazevalidation', 'sharedsecret');
 
-// Si la config est incomplète, on affiche un message clair sans redirect.
+echo $OUTPUT->header();
+echo $OUTPUT->heading(format_string($algomazevalidation->name));
+
+// Description / intro de l'activité saisie par l'enseignant.
+if (!empty($algomazevalidation->intro)) {
+    echo $OUTPUT->box(
+        format_module_intro('algomazevalidation', $algomazevalidation, $cm->id),
+        'generalbox mod_introbox'
+    );
+}
+
+// Si la config est incomplète, on affiche un message clair et on s'arrête là.
 if (empty($baseurl) || empty($secret)) {
-    echo $OUTPUT->header();
     echo $OUTPUT->notification(
         get_string('ssomisconfigured', 'algomazevalidation'),
         \core\output\notification::NOTIFY_ERROR
@@ -48,11 +63,26 @@ if (empty($baseurl) || empty($secret)) {
     exit;
 }
 
-// Construit l'URL signée vers AlgoMaze.
+// Statut de complétion (appel direct au serveur AlgoMaze pour avoir l'état le plus à jour).
+$levelnumber = (int)$algomazevalidation->levelnumber;
+$iscompleted = external_site_check_completion($USER->id, $levelnumber);
+
+if ($iscompleted) {
+    echo $OUTPUT->notification(
+        get_string('levelcompleted', 'algomazevalidation'),
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+} else {
+    echo $OUTPUT->notification(
+        get_string('levelpending', 'algomazevalidation', $levelnumber),
+        \core\output\notification::NOTIFY_INFO
+    );
+}
+
+// Construit l'URL signée vers AlgoMaze (SSO HMAC).
 // Payload signé : "username:level:timestamp" (cohérent avec la route /sso/from-moodle côté AlgoMaze).
 $baseurl = rtrim($baseurl, '/');
 $username = strtolower($USER->username);
-$levelnumber = (int)$algomazevalidation->levelnumber;
 $timestamp = time();
 $payload = $username . ':' . $levelnumber . ':' . $timestamp;
 $signature = hash_hmac('sha256', $payload, $secret);
@@ -63,4 +93,22 @@ $ssourl = $baseurl . '/sso/from-moodle?'
     . '&timestamp=' . $timestamp
     . '&signature=' . $signature;
 
-redirect(new moodle_url($ssourl));
+// Bouton qui ouvre AlgoMaze dans un nouvel onglet (l'étudiant garde la page
+// Moodle ouverte ; à son retour il rafraîchit pour voir le statut mis à jour).
+echo html_writer::start_div('algomaze-launch', ['style' => 'text-align: center; margin: 24px 0;']);
+echo html_writer::link(
+    $ssourl,
+    get_string('startactivity', 'algomazevalidation'),
+    [
+        'class' => 'btn btn-primary btn-lg',
+        'target' => '_blank',
+        'rel' => 'noopener'
+    ]
+);
+echo html_writer::tag('p',
+    get_string('opensinnewtab', 'algomazevalidation'),
+    ['class' => 'text-muted', 'style' => 'margin-top: 12px; font-size: 0.9em;']
+);
+echo html_writer::end_div();
+
+echo $OUTPUT->footer();
