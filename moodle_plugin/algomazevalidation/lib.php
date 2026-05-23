@@ -69,33 +69,26 @@ function algomazevalidation_delete_instance($id) {
 }
 
 /**
- * Retourne une liste des éléments de participation pour l'activité algomaze_validation.
+ * Détermine si l'activité algomaze_validation est terminée pour un utilisateur donné.
+ *
+ * Appelé par Moodle pour la complétion automatique. DOIT retourner un booléen
+ * (ou $type si la règle n'a pas son mot à dire). Ne pas modifier l'état de
+ * complétion ici — c'est le rôle de Moodle de le faire à partir de la valeur
+ * retournée.
  *
  * @param stdClass $course Le cours actuel.
  * @param stdClass $cm L'instance du module de cours.
- * @param stdClass $userid ID de l'utilisateur.
- * @return null|stdClass Information de participation.
+ * @param int $userid ID de l'utilisateur.
+ * @param bool $type Valeur par défaut à retourner si la règle ne décide pas.
+ * @return bool True si l'utilisateur a validé le niveau côté AlgoMaze.
  */
 function algomazevalidation_get_completion_state($course, $cm, $userid, $type) {
     global $DB;
 
-    // Logique personnalisée pour déterminer si l'activité est terminée ou non.
-    // Par exemple, en appelant une API externe pour vérifier l'état de complétion.
-
-    // Récupérer l'instance de l'activité
     $instance = $DB->get_record('algomazevalidation', array('id' => $cm->instance), '*', MUST_EXIST);
-    $levelnumber = $instance->levelnumber;
+    $levelnumber = (int)$instance->levelnumber;
 
-    // Simuler l'appel API au site externe pour vérifier l'achèvement.
-    $completion = external_site_check_completion($userid, $levelnumber);
-
-    if($completion)
-    {
-        $completion = new completion_info($course);
-        $completion->set_module_viewed($cm);
-    }
-
-    return $completion;
+    return (bool)external_site_check_completion($userid, $levelnumber);
 }
 
 /**
@@ -109,10 +102,17 @@ function external_site_check_completion($userid, $levelnumber) {
     global $DB;
 
     $user = $DB->get_record('user', array('id' => $userid), 'username', MUST_EXIST);
-    $username = $user->username;
+    $username = strtolower($user->username);
     $levelnumber = (int)$levelnumber;
 
-    $apiurl = 'https://algomaze.tspro.fr/check_completion';
+    // Utilise la même `baseurl` que le SSO (configurée dans les paramètres du plugin).
+    $baseurl = trim((string)get_config('mod_algomazevalidation', 'baseurl'));
+    if (empty($baseurl)) {
+        error_log('mod_algomazevalidation: baseurl non configurée — impossible de vérifier la complétion.');
+        return false;
+    }
+    $apiurl = rtrim($baseurl, '/') . '/check_completion';
+
     $data = array(
         'username' => $username,
         'levelnumber' => $levelnumber,
@@ -123,6 +123,7 @@ function external_site_check_completion($userid, $levelnumber) {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
     curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5); // Évite que la page Moodle reste bloquée si AlgoMaze ne répond pas.
 
     $response = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -131,12 +132,12 @@ function external_site_check_completion($userid, $levelnumber) {
     if ($status === 200) {
         $response_data = json_decode($response);
         if (isset($response_data->completed)) {
-            return $response_data->completed;
+            return (bool)$response_data->completed;
         } else {
-            error_log('Unexpected API response: ' . $response);
+            error_log('mod_algomazevalidation: réponse API inattendue : ' . $response);
         }
     } else {
-        error_log('API call failed with status: ' . $status);
+        error_log('mod_algomazevalidation: appel API échoué (status ' . $status . ') vers ' . $apiurl);
         error_log('Response body: ' . $response);
     }
 

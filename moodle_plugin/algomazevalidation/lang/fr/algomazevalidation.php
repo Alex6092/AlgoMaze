@@ -14,3 +14,6 @@ $string['settingbaseurl_desc'] = 'URL où est hébergée l\'application AlgoMaze
 $string['settingsharedsecret'] = 'Secret partagé SSO';
 $string['settingsharedsecret_desc'] = 'Secret HMAC partagé avec le serveur AlgoMaze (variable d\'environnement MOODLE_SHARED_SECRET). Doit correspondre exactement.';
 $string['ssomisconfigured'] = 'SSO non configuré : URL AlgoMaze ou secret partagé manquant. Contactez l\'administrateur Moodle.';
+$string['levelcompleted'] = '✓ Niveau terminé. Tu peux revenir sur AlgoMaze pour le refaire et améliorer ton badge.';
+$string['levelpending'] = '⏳ Niveau {$a} non terminé. Clique sur le bouton ci-dessous pour ouvrir AlgoMaze (connexion automatique).';
+$string['opensinnewtab'] = 'AlgoMaze s\'ouvre dans un nouvel onglet. Reviens sur cette page et rafraîchis-la pour voir le statut mis à jour.';
