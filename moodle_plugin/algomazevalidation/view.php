@@ -32,15 +32,30 @@ $PAGE->set_url('/mod/algomazevalidation/view.php', array('id' => $cm->id));
 $PAGE->set_title(format_string($algomazevalidation->name));
 $PAGE->set_heading(format_string($course->fullname));
 
-// Met à jour l'état "vu" (compte la consultation de la page comme une visite).
-$completion = new completion_info($course);
-if ($completion->is_enabled($cm)) {
-    $completion->set_module_viewed($cm);
-}
-
 // Récupère la configuration SSO du plugin.
 $baseurl = trim((string)get_config('mod_algomazevalidation', 'baseurl'));
 $secret = (string)get_config('mod_algomazevalidation', 'sharedsecret');
+
+// Statut de complétion (appel direct au serveur AlgoMaze pour avoir l'état le plus à jour).
+$levelnumber = (int)$algomazevalidation->levelnumber;
+$iscompleted = !empty($baseurl) ? external_site_check_completion($USER->id, $levelnumber) : false;
+
+// Met à jour l'état de complétion Moodle :
+//   - set_module_viewed enregistre la visite (utile si le critère "vue" est actif),
+//     mais ne ré-évalue les règles custom qu'au PREMIER affichage (il sort tôt si
+//     l'activité est déjà marquée comme vue).
+//   - update_state force la ré-évaluation de notre règle custom (qui appelle
+//     /check_completion côté AlgoMaze) à CHAQUE chargement de la page : c'est ce
+//     qui permet à l'étudiant de voir l'activité passer en "terminée" après avoir
+//     validé son niveau, simplement en rafraîchissant la page Moodle.
+$completion = new completion_info($course);
+if ($completion->is_enabled($cm)) {
+    $completion->set_module_viewed($cm);
+    $completion->update_state(
+        $cm,
+        $iscompleted ? COMPLETION_COMPLETE : COMPLETION_INCOMPLETE
+    );
+}
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(format_string($algomazevalidation->name));
@@ -62,10 +77,6 @@ if (empty($baseurl) || empty($secret)) {
     echo $OUTPUT->footer();
     exit;
 }
-
-// Statut de complétion (appel direct au serveur AlgoMaze pour avoir l'état le plus à jour).
-$levelnumber = (int)$algomazevalidation->levelnumber;
-$iscompleted = external_site_check_completion($USER->id, $levelnumber);
 
 if ($iscompleted) {
     echo $OUTPUT->notification(
