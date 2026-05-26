@@ -41,6 +41,7 @@ Réponds UNIQUEMENT au format JSON décrit par le schéma.`;
 export async function evaluateSolution({ instructions, constraints, code }) {
     const url = process.env.LMSTUDIO_URL;
     const model = process.env.LMSTUDIO_MODEL;
+    const apiKey = process.env.LMSTUDIO_API_KEY; // Optionnel : utile si LM Studio est exposé derrière une auth Bearer.
     if (!url || !model) {
         throw new Error('LMSTUDIO_URL ou LMSTUDIO_MODEL manquant dans .env');
     }
@@ -71,9 +72,12 @@ export async function evaluateSolution({ instructions, constraints, code }) {
         temperature: 0.3
     };
 
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
     const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body)
     });
 
