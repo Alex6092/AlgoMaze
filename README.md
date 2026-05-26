@@ -109,6 +109,7 @@ L'application est alors disponible sur http://localhost:3000.
 | `REDIS_USER`, `REDIS_PASSWORD`, `REDIS_HOST`, `REDIS_PORT` | Connexion Redis |
 | `LMSTUDIO_URL` | URL de l'API LM Studio (ex. `http://localhost:1234/v1/chat/completions`) |
 | `LMSTUDIO_MODEL` | Identifiant du modèle chargé dans LM Studio |
+| `LMSTUDIO_API_KEY` | *Optionnel* — clé envoyée en `Authorization: Bearer <key>` (utile si LM Studio est exposé derrière un reverse proxy avec auth). |
 | `MOODLE_SHARED_SECRET` | Secret HMAC partagé avec le plugin Moodle pour le SSO |
 
 Génère des secrets robustes avec :
