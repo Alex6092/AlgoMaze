@@ -47,6 +47,7 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 - 🔍 **Explorateur de solutions** (`/solutions`) : consultation des solutions et feedbacks IA par utilisateur ou par niveau, avec historique horodaté.
 - 🚨 **Détection de triche** : capture de signaux comportementaux (collages, temps inactif, pertes de focus, captures d'écran, collages d'images) + détection de **similarité de code** (distance de Levenshtein normalisée) avec constellation et modal de diff côte-à-côte.
 - 🤖 **Régénération de feedback IA** : relance unitaire d'une évaluation ou évaluation en masse de toutes les solutions sans feedback (configurable).
+- 🎯 **Remontée des compétences vers EFE** : push automatique du niveau de maîtrise (vert/bleu/jaune/rouge/gris) vers l'API d'évaluation par compétences EFE après chaque évaluation IA qui change la couleur. Snapshot manuel sur un sous-ensemble de niveaux (ex. semaine 1 = 20 premiers niveaux) via `/progress`.
 
 ### Infrastructure
 - 🔐 **Authentification JWT** avec sliding refresh (token renouvelé à 50% du TTL) et synchronisation cookie / localStorage.
@@ -68,6 +69,7 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 │   ├── badges.js                 Mapping score→badge, médiane→rang, score de maîtrise
 │   ├── presence.js               Suivi temps réel des étudiants (dashboard /live)
 │   ├── cheatDetection.js         Signaux comportementaux + similarité de code (Levenshtein)
+│   ├── efeClient.js              Client API EFE (remontée des compétences, X-Moodle-Key)
 │   ├── redisClient.js            Connexion Redis partagée
 │   ├── config.json               Config applicative (seuils, rate limits, cheat detection)
 │   ├── public/                   Assets statiques
@@ -111,6 +113,11 @@ L'application est alors disponible sur http://localhost:3000.
 | `LMSTUDIO_MODEL` | Identifiant du modèle chargé dans LM Studio |
 | `LMSTUDIO_API_KEY` | *Optionnel* — clé envoyée en `Authorization: Bearer <key>` (utile si LM Studio est exposé derrière un reverse proxy avec auth). |
 | `MOODLE_SHARED_SECRET` | Secret HMAC partagé avec le plugin Moodle pour le SSO |
+| `EFE_API_BASE_URL` | *Optionnel* — URL racine de l'API EFE (ex. `https://efe.example.com/apiMoodle`). Si absent, la remontée des compétences est désactivée. |
+| `EFE_API_KEY` | *Optionnel* — clé envoyée en header `X-Moodle-Key` à l'API EFE. |
+| `EFE_COMPETENCE_CODE` | *Optionnel* — code de la compétence évaluée par AlgoMaze (ex. `C01.1.a`, cf. `GET /apiMoodle/competences`). |
+| `EFE_DEVOIR_KEY` | *Optionnel* — identifiant idempotent du devoir "progression globale" (défaut : `algomaze_progress_ongoing`). Ne pas changer après mise en service. |
+| `EFE_DEVOIR_LABEL` | *Optionnel* — libellé affiché côté EFE (défaut : `AlgoMaze — Progression globale`). |
 
 Génère des secrets robustes avec :
 ```sh

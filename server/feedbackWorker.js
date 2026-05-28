@@ -7,8 +7,9 @@
 import { createClient } from 'redis';
 import redisClient from './redisClient.js';
 import { evaluateSolution } from './llmClient.js';
-import { badgeForScore, persistBadge } from './badges.js';
+import { badgeForScore, persistBadge, computeEfeCouleur } from './badges.js';
 import { detectQualityJump } from './cheatDetection.js';
+import { isEfeConfigured, pushNote, getOngoingDevoir, getCompetenceCode } from './efeClient.js';
 
 const PENDING_KEY = 'feedback:queue:pending';
 const PROCESSING_KEY = 'feedback:queue:processing';
@@ -19,6 +20,52 @@ const jobKey = (jobId) => `feedback:job:${jobId}`;
 
 function newJobId() {
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+// Stockage Redis de la dernière couleur poussée vers EFE pour chaque (utilisateur, devoir).
+// Permet de ne PAS rappeler EFE si la couleur n'a pas changé depuis le dernier push,
+// économisant des appels HTTP et respectant le besoin "appel uniquement quand
+// le niveau de compétence évolue".
+const lastEfeColorKey = (username, devoirKey) => `efe:last_color:${username}:${devoirKey}`;
+
+// Pousse la note "progression globale" vers EFE pour un étudiant si toutes les
+// conditions sont réunies : EFE configuré, compétence code défini, moodleId
+// connu, ET la couleur calculée diffère de la dernière couleur poussée.
+async function maybePushOngoingNote(username) {
+    if (!isEfeConfigured()) return;
+    const competenceCode = getCompetenceCode();
+    if (!competenceCode) return; // EFE configuré mais pas de code de compétence : on ne sait pas quoi pousser.
+
+    const userRaw = await redisClient.get('user:' + username);
+    if (!userRaw) return;
+    const user = JSON.parse(userRaw);
+    if (!user.moodleId) return; // Pas de moodleId connu → impossible de cibler l'étudiant côté EFE.
+
+    const { couleur } = await computeEfeCouleur(username, undefined); // undefined → totalLevels (parcours complet)
+    const devoir = getOngoingDevoir();
+
+    const lastColor = await redisClient.get(lastEfeColorKey(username, devoir.key));
+    if (lastColor === couleur) return; // Pas de changement → pas d'appel API.
+
+    const result = await pushNote({
+        idMoodleEleve: user.moodleId,
+        competenceCode,
+        couleur,
+        devoirKey: devoir.key,
+        devoirLabel: devoir.label,
+        commentaire: `Mise à jour automatique depuis AlgoMaze (couleur ${lastColor || 'initiale'} → ${couleur}).`
+    });
+
+    if (result.ok) {
+        await redisClient.set(lastEfeColorKey(username, devoir.key), couleur);
+        console.log(`[EFE] ${username} (moodleId=${user.moodleId}) : ${lastColor || '∅'} → ${couleur} [${result.action}]`);
+    } else if (result.reason === 'http' && result.status === 403) {
+        // L'étudiant n'appartient pas à l'établissement de la clé, ou n'existe pas dans EFE.
+        // On logge mais on ne lève pas — on respecte le besoin "skip silencieux".
+        console.warn(`[EFE] ${username} (moodleId=${user.moodleId}) : skip (élève inconnu côté EFE, HTTP ${result.status})`);
+    } else {
+        console.warn(`[EFE] ${username} (moodleId=${user.moodleId}) : push échec`, result);
+    }
 }
 
 // Enfile un job d'évaluation. Si une évaluation est déjà en attente/en cours
@@ -91,6 +138,12 @@ async function processJob(jobId, io) {
         const jumpInfo = await detectQualityJump(username, levelId, badge.xp);
 
         await persistBadge(username, levelId, badge.name, badge.xp);
+
+        // Remontée automatique vers EFE : on push uniquement si la couleur de
+        // compétence change (ex : passage de jaune à bleu). Sinon, pas d'appel API
+        // — la note côté EFE n'aurait rien à mettre à jour.
+        try { await maybePushOngoingNote(username); }
+        catch (e) { console.error(`[feedbackWorker] EFE push (ongoing) échec pour ${username}:`, e.message); }
 
         const enriched = {
             ...result,

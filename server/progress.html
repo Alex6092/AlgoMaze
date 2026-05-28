@@ -25,6 +25,17 @@
             <div id="bulk-eval-content"></div>
         </div>
 
+        <!-- Snapshot manuel de compétence vers EFE (visible si EFE est configuré). -->
+        <div class="card" id="efe-snapshot-card" style="margin-bottom: 16px; display: none;">
+            <h2 class="card-title" style="margin-top:0;">Snapshot de compétence — EFE</h2>
+            <p class="muted" style="margin-top:0;">
+                Pousse une note "à un instant T" pour chaque étudiant ayant un identifiant Moodle connu,
+                calculée sur les <b>N premiers niveaux</b> du parcours. Chaque snapshot crée un devoir indépendant
+                dans EFE (ré-envoyer le même nom + N met à jour le même devoir).
+            </p>
+            <div id="efe-snapshot-content"></div>
+        </div>
+
         <div class="card" style="margin-bottom: 16px;">
             <div id="userdatacontainer"></div>
         </div>
@@ -255,9 +266,119 @@
             }
         }
 
+        // ----- Snapshot EFE -----
+        async function refreshEfeSnapshotCard() {
+            const card = document.getElementById('efe-snapshot-card');
+            const content = document.getElementById('efe-snapshot-content');
+            const token = localStorage.getItem('token');
+            try {
+                const r = await fetch('/admin/efe/status', {
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    credentials: 'include'
+                });
+                if (!r.ok) { card.style.display = 'none'; return; }
+                const data = await r.json();
+                if (!data.enabled) {
+                    // Affiche quand même la carte avec un message si EFE est partiellement configuré
+                    // (ça aide l'admin à diagnostiquer pourquoi le push ne fonctionne pas).
+                    if (data.reason) {
+                        card.style.display = 'block';
+                        content.innerHTML = `<p class="muted" style="margin:0;">⚠️ ${escapeHtml(data.reason)}</p>`;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                    return;
+                }
+                card.style.display = 'block';
+                const maxLevels = data.totalLevels || 42;
+                content.innerHTML = `
+                    <p class="muted" style="margin:0 0 10px;">
+                        Compétence cible : <code>${escapeHtml(data.competenceCode)}</code>
+                        · API EFE : <span style="color:var(--success);">opérationnelle</span>
+                    </p>
+                    <div style="display:grid;grid-template-columns:1fr 160px auto;gap:10px;align-items:end;max-width:640px;">
+                        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;">
+                            <span>Nom du devoir EFE</span>
+                            <input type="text" id="efe-label" placeholder="ex. AlgoMaze — Semaine 1" maxlength="120" style="padding:6px 10px;">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.85rem;">
+                            <span>Niveaux pris en compte (1–${maxLevels})</span>
+                            <input type="number" id="efe-nlevels" min="1" max="${maxLevels}" value="${maxLevels}" style="padding:6px 10px;">
+                        </label>
+                        <button class="btn btn-primary" id="efe-snapshot-btn" type="button">Pousser vers EFE</button>
+                    </div>
+                    <div id="efe-snapshot-result" style="margin-top:14px;"></div>
+                `;
+                document.getElementById('efe-snapshot-btn').addEventListener('click', launchEfeSnapshot);
+            } catch (e) {
+                card.style.display = 'none';
+            }
+        }
+
+        async function launchEfeSnapshot() {
+            const btn = document.getElementById('efe-snapshot-btn');
+            const labelInput = document.getElementById('efe-label');
+            const nLevelsInput = document.getElementById('efe-nlevels');
+            const resultDiv = document.getElementById('efe-snapshot-result');
+            const devoirLabel = labelInput.value.trim();
+            const nLevels = parseInt(nLevelsInput.value, 10);
+
+            if (!devoirLabel) { showNotification('Saisis un nom de devoir.', 'error'); return; }
+            if (isNaN(nLevels) || nLevels < 1) { showNotification('Nombre de niveaux invalide.', 'error'); return; }
+
+            const ok = confirm(
+                `Pousser une note de compétence vers EFE pour chaque étudiant (moodleId connu) `
+                + `sur les ${nLevels} premiers niveaux ?\n\n`
+                + `Devoir EFE : "${devoirLabel}"`
+            );
+            if (!ok) return;
+
+            const token = localStorage.getItem('token');
+            btn.disabled = true;
+            btn.textContent = 'Envoi en cours…';
+            resultDiv.innerHTML = '';
+
+            try {
+                const r = await fetch('/admin/efe/snapshot', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ devoirLabel, nLevels })
+                });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+                const pushed = (data.pushed.created || 0) + (data.pushed.updated || 0);
+                const skipped = (data.skipped.noMoodleId || 0) + (data.skipped.noXp || 0) + (data.skipped.notInEfe || 0);
+                showNotification(
+                    `Snapshot envoyé : ${pushed} note(s) poussée(s), ${skipped} ignorée(s), ${data.errors} erreur(s).`,
+                    'success'
+                );
+                resultDiv.innerHTML = `
+                    <div style="background:var(--surface-hover);border-radius:8px;padding:12px;font-size:0.88rem;">
+                        <p style="margin:0 0 6px;"><b>Récapitulatif</b> — devoir EFE : <code>${escapeHtml(data.devoirKey)}</code></p>
+                        <ul style="margin:0;padding-left:18px;">
+                            <li>${escapeHtml(data.pushed.created)} note(s) créée(s), ${escapeHtml(data.pushed.updated)} note(s) mise(s) à jour.</li>
+                            <li>Ignoré : ${escapeHtml(data.skipped.noMoodleId)} sans moodleId, ${escapeHtml(data.skipped.notInEfe)} inconnu(s) côté EFE.</li>
+                            <li>${escapeHtml(data.errors)} erreur(s).</li>
+                            <li>Étudiants traités : ${escapeHtml(data.processed)}.</li>
+                        </ul>
+                    </div>
+                `;
+            } catch (err) {
+                showNotification('Erreur : ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Pousser vers EFE';
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', async function() {
             await fetchUsersProgress();
             await refreshBulkEvalCard();
+            await refreshEfeSnapshotCard();
         });
     </script>
 

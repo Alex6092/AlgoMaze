@@ -15,7 +15,8 @@ import { __dirname } from './utils.js';
 import { generateToken, verifyToken, userFromToken, slidingRefresh, TOKEN_COOKIE_OPTIONS, getTokenFromReq, requireUser, requireAdmin } from './jwtConfig.js';
 import config from './config.json' assert { type: 'json' };
 import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
-import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp } from './badges.js';
+import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp, computeEfeCouleur } from './badges.js';
+import { isEfeConfigured, pushNote as efePushNote, ping as efePing, getCompetenceCode } from './efeClient.js';
 import { interpretSignals, analyzeLevelSimilarity } from './cheatDetection.js';
 import { loginLimiter, checkAnswerLimiter, precheckLimiter } from './rateLimit.js';
 import { recordEvent as recordPresenceEvent, setIo as setPresenceIo, getSnapshot as getPresenceSnapshot } from './presence.js';
@@ -112,7 +113,7 @@ app.get('/register', (req, res) => {
 // transparenment au SSO en marquant moodleManaged=true.
 app.get('/sso/from-moodle', async (req, res) => {
     try {
-        const { username, level, timestamp, signature } = req.query;
+        const { username, level, timestamp, signature, moodleid } = req.query;
         const secret = process.env.MOODLE_SHARED_SECRET;
 
         if (!secret) {
@@ -131,9 +132,14 @@ app.get('/sso/from-moodle', async (req, res) => {
         }
 
         // Vérification de signature en temps constant.
+        // Le payload inclut le moodleid quand il est fourni (plugin v1.3+),
+        // mais reste compatible avec les anciens plugins qui ne l'envoyaient pas.
         const lvl = parseInt(level, 10) || 0;
         const uname = String(username).toLowerCase();
-        const payload = uname + ':' + lvl + ':' + ts;
+        const mid = moodleid != null ? parseInt(moodleid, 10) : NaN;
+        const payload = !isNaN(mid)
+            ? uname + ':' + lvl + ':' + ts + ':' + mid
+            : uname + ':' + lvl + ':' + ts;
         const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
 
         let sigBuf, expBuf;
@@ -148,14 +154,22 @@ app.get('/sso/from-moodle', async (req, res) => {
         }
 
         // Auto-provisioning : crée le compte si nécessaire, sinon lie l'existant.
+        // Si on a un moodleId (plugin v1.3+), on le stocke pour permettre la remontée
+        // automatique des compétences vers EFE.
         const userKey = 'user:' + uname;
         const existingRaw = await redisClient.get(userKey);
         if (existingRaw) {
             const user = JSON.parse(existingRaw);
+            let dirty = false;
             if (!user.moodleManaged) {
                 user.moodleManaged = true;
-                await redisClient.set(userKey, JSON.stringify(user));
+                dirty = true;
             }
+            if (!isNaN(mid) && user.moodleId !== mid) {
+                user.moodleId = mid;
+                dirty = true;
+            }
+            if (dirty) await redisClient.set(userKey, JSON.stringify(user));
         } else {
             // Mot de passe random non-utilisable (l'étudiant se connecte uniquement via SSO).
             // Un admin peut le réinitialiser via la page /progress si besoin.
@@ -168,6 +182,7 @@ app.get('/sso/from-moodle', async (req, res) => {
                 isAdmin: false,
                 moodleManaged: true
             };
+            if (!isNaN(mid)) newUser.moodleId = mid;
             await redisClient.set(userKey, JSON.stringify(newUser));
         }
 
@@ -779,6 +794,120 @@ app.post('/admin/bulk-evaluate', async (req, res) => {
     } catch (error) {
         console.log("[ERROR] /admin/bulk-evaluate " + error);
         res.status(500).send({ error: 'Failed to bulk-evaluate' });
+    }
+});
+
+// Statut de la configuration EFE (visible côté admin) : permet à l'UI de
+// savoir s'il faut afficher la carte "snapshot manuel" sur /progress.
+app.get('/admin/efe/status', async (req, res) => {
+    try {
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
+        if (!isEfeConfigured()) {
+            return res.send({ enabled: false, reason: 'EFE_API_BASE_URL ou EFE_API_KEY absent du .env' });
+        }
+        const competenceCode = getCompetenceCode();
+        if (!competenceCode) {
+            return res.send({ enabled: false, reason: 'EFE_COMPETENCE_CODE absent du .env' });
+        }
+        const totalLevels = (config && config.totalLevels) || 42;
+        // Ping permet de valider la clé API en plus de la connectivité réseau.
+        const pingResult = await efePing();
+        return res.send({
+            enabled: pingResult.ok,
+            competenceCode,
+            totalLevels,
+            ping: pingResult,
+            reason: pingResult.ok ? null : `Ping EFE échoué : ${pingResult.reason || ''} ${pingResult.error || pingResult.status || ''}`.trim()
+        });
+    } catch (error) {
+        console.log("[ERROR] /admin/efe/status " + error);
+        res.status(500).send({ error: 'Failed to read EFE status' });
+    }
+});
+
+// Snapshot manuel : pousse une note "frozen" pour chaque étudiant ayant un moodleId,
+// calculée sur les N premiers niveaux du parcours. Chaque appel crée (ou met à jour)
+// un devoir indépendant dans EFE, identifié par le devoirKey dérivé du label.
+app.post('/admin/efe/snapshot', async (req, res) => {
+    try {
+        const ctx = await requireAdmin(req, res);
+        if (!ctx) return;
+        if (!isEfeConfigured()) {
+            return res.status(400).send({ error: 'EFE non configuré dans le .env' });
+        }
+        const competenceCode = getCompetenceCode();
+        if (!competenceCode) {
+            return res.status(400).send({ error: 'EFE_COMPETENCE_CODE manquant dans le .env' });
+        }
+
+        const totalLevels = (config && config.totalLevels) || 42;
+        const devoirLabel = String((req.body && req.body.devoirLabel) || '').trim();
+        const nLevels = parseInt((req.body && req.body.nLevels), 10);
+
+        if (!devoirLabel) return res.status(400).send({ error: 'devoirLabel requis' });
+        if (devoirLabel.length > 120) return res.status(400).send({ error: 'devoirLabel trop long (max 120)' });
+        if (isNaN(nLevels) || nLevels < 1 || nLevels > totalLevels) {
+            return res.status(400).send({ error: `nLevels doit être entre 1 et ${totalLevels}` });
+        }
+
+        // devoirKey = slug(label) + suffixe nLevels. Stable : ré-envoyer le même
+        // label + même nLevels = upsert. Changer nLevels = devoir distinct.
+        const slug = devoirLabel.toLowerCase()
+            .normalize('NFD').replace(/[̀-ͯ]/g, '') // retire les accents (combining marks Unicode)
+            .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80);
+        const devoirKey = `algomaze_snapshot_${slug || 'untitled'}_n${nLevels}`;
+
+        const userKeys = await redisClient.keys('user:*');
+        const summary = {
+            devoirKey,
+            devoirLabel,
+            nLevels,
+            processed: 0,
+            pushed: { created: 0, updated: 0 },
+            skipped: { noMoodleId: 0, noXp: 0, notInEfe: 0 },
+            errors: 0,
+            details: []
+        };
+
+        for (const key of userKeys) {
+            summary.processed++;
+            const raw = await redisClient.get(key);
+            if (!raw) continue;
+            let u;
+            try { u = JSON.parse(raw); } catch (e) { summary.errors++; continue; }
+            if (!u.moodleId) { summary.skipped.noMoodleId++; continue; }
+
+            const { couleur, score, xp } = await computeEfeCouleur(u.username, nLevels);
+            // Note : on pousse même si xp=0 (couleur=gris) pour signaler "non évalué".
+            // Si tu préfères skip, décommente la ligne suivante.
+            // if (xp === 0) { summary.skipped.noXp++; continue; }
+
+            const result = await efePushNote({
+                idMoodleEleve: u.moodleId,
+                competenceCode,
+                couleur,
+                devoirKey,
+                devoirLabel,
+                commentaire: `Snapshot AlgoMaze sur ${nLevels} niveau(x). Score : ${score} % (${xp} XP).`
+            });
+
+            if (result.ok) {
+                summary.pushed[result.action === 'updated' ? 'updated' : 'created']++;
+                summary.details.push({ username: u.username, moodleId: u.moodleId, couleur, score, action: result.action });
+            } else if (result.reason === 'http' && (result.status === 403 || result.status === 404)) {
+                summary.skipped.notInEfe++;
+            } else {
+                summary.errors++;
+                summary.details.push({ username: u.username, moodleId: u.moodleId, error: result });
+            }
+        }
+
+        console.log('[EFE] snapshot terminé :', JSON.stringify({ ...summary, details: undefined }));
+        res.send(summary);
+    } catch (error) {
+        console.log("[ERROR] /admin/efe/snapshot " + error);
+        res.status(500).send({ error: 'Failed to push snapshot' });
     }
 });
 
