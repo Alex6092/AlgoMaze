@@ -169,7 +169,8 @@ router.delete('/delete', async(req, res) => {
                         'feedback:result:' + username + ':*',
                         'signals:' + username + ':*',
                         'badge:' + username + ':*',
-                        'xp:' + username + ':*'
+                        'xp:' + username + ':*',
+                        'efe:last_color:' + username + ':*'
                     ];
                     let totalDeleted = 0;
                     for (const pattern of patterns) {

@@ -138,6 +138,49 @@ export async function computeUserTotalXp(username) {
     return total;
 }
 
+// Somme des XP gagnés UNIQUEMENT sur les niveaux 1..maxLevel.
+// Utilisé pour les snapshots de compétence à un instant T sur un sous-ensemble du parcours
+// (par ex. "les 20 premiers niveaux"). maxLevel = nombre de niveaux pris en compte.
+export async function computeUserTotalXpForLevels(username, maxLevel) {
+    const keys = await redisClient.keys(`xp:${username}:*`);
+    const prefix = `xp:${username}:`;
+    let total = 0;
+    for (const key of keys) {
+        const levelId = parseInt(key.substring(prefix.length), 10);
+        if (isNaN(levelId) || levelId > maxLevel) continue;
+        const v = parseInt(await redisClient.get(key));
+        if (!isNaN(v)) total += v;
+    }
+    return total;
+}
+
+// Mappe un score de maîtrise (0..100) vers une couleur EFE selon les seuils du config.
+// Les seuils correspondent à ceux affichés à l'étudiant (page /docs), pour la cohérence.
+//   score = 0           → 'gris'  (n'a pas commencé)
+//   0 < score < fragile        → 'rouge' (Maîtrise insuffisante)
+//   fragile ≤ score < satisfaisante → 'jaune' (Maîtrise fragile)
+//   satisfaisante ≤ score < tresBonne → 'bleu'  (Maîtrise satisfaisante)
+//   score ≥ tresBonne          → 'vert'  (Très bonne maîtrise)
+export function efeCouleurForScore(score) {
+    const thresholds = (config && config.masteryThresholds) || { fragile: 20, satisfaisante: 40, tresBonne: 70 };
+    const safeScore = Math.max(0, Math.min(100, Number(score) || 0));
+    if (safeScore <= 0) return 'gris';
+    if (safeScore >= thresholds.tresBonne) return 'vert';
+    if (safeScore >= thresholds.satisfaisante) return 'bleu';
+    if (safeScore >= thresholds.fragile) return 'jaune';
+    return 'rouge';
+}
+
+// Calcule la couleur EFE pour un étudiant, soit sur l'intégralité du parcours
+// (maxLevel = totalLevels), soit sur les N premiers niveaux pour un snapshot.
+export async function computeEfeCouleur(username, maxLevel) {
+    const totalLevels = (config && config.totalLevels) || 42;
+    const safeMax = Math.max(1, Math.min(totalLevels, parseInt(maxLevel, 10) || totalLevels));
+    const xp = await computeUserTotalXpForLevels(username, safeMax);
+    const score = (xp / (safeMax * MAX_XP_PER_LEVEL)) * 100;
+    return { couleur: efeCouleurForScore(score), score: Math.round(score), xp, maxLevel: safeMax };
+}
+
 // Médiane glissante des XP sur les N derniers niveaux validés (par ordre décroissant de levelId).
 export async function computeUserRank(username, windowSize) {
     const keys = await redisClient.keys(`xp:${username}:*`);

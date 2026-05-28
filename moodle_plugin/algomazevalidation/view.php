@@ -91,17 +91,21 @@ if ($iscompleted) {
 }
 
 // Construit l'URL signée vers AlgoMaze (SSO HMAC).
-// Payload signé : "username:level:timestamp" (cohérent avec la route /sso/from-moodle côté AlgoMaze).
+// Payload signé : "username:level:timestamp:moodleid" — l'ID Moodle de l'étudiant
+// est inclus pour qu'AlgoMaze puisse le stocker (utile pour la remontée des
+// compétences vers EFE) sans qu'il puisse être falsifié.
 $baseurl = rtrim($baseurl, '/');
 $username = strtolower($USER->username);
+$moodleid = (int)$USER->id;
 $timestamp = time();
-$payload = $username . ':' . $levelnumber . ':' . $timestamp;
+$payload = $username . ':' . $levelnumber . ':' . $timestamp . ':' . $moodleid;
 $signature = hash_hmac('sha256', $payload, $secret);
 
 $ssourl = $baseurl . '/sso/from-moodle?'
     . 'username=' . rawurlencode($username)
     . '&level=' . $levelnumber
     . '&timestamp=' . $timestamp
+    . '&moodleid=' . $moodleid
     . '&signature=' . $signature;
 
 // Bouton qui ouvre AlgoMaze dans un nouvel onglet (l'étudiant garde la page
