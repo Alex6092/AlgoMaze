@@ -50,7 +50,7 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 - 🎯 **Remontée des compétences vers EFE** : push automatique du niveau de maîtrise (vert/bleu/jaune/rouge/gris) vers l'API d'évaluation par compétences EFE après chaque évaluation IA qui change la couleur. Snapshot manuel sur un sous-ensemble de niveaux (ex. semaine 1 = 20 premiers niveaux) via `/progress`.
 
 ### Infrastructure
-- 🔐 **Authentification JWT** avec sliding refresh (token renouvelé à 50% du TTL) et synchronisation cookie / localStorage.
+- 🔐 **Authentification JWT** avec sliding refresh (token renouvelé à 50% du TTL) et synchronisation cookie / localStorage. Le serveur accepte le token via l'en-tête Bearer ou le cookie et retient le token valide le plus récent (robuste aux tokens périmés en localStorage et aux cookies `token` en double posés par d'autres applications du même domaine).
 - 🚦 **Rate limiting** sur les routes sensibles (login, soumission de solution, pré-check).
 - 📡 **WebSocket** (Socket.IO) pour les notifications de feedback IA aux étudiants et la mise à jour temps réel du dashboard admin.
 - 🛡️ **Sandbox d'exécution** côté serveur (Node.js VM, timeout 500 ms) pour le pré-check.
@@ -62,7 +62,8 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 ├── server/                       Backend Node.js + Express + Redis
 │   ├── index.js                  Routes HTTP, Socket.IO, exécution sandbox
 │   ├── routes/user.js            Auth (login/register/logout), gestion utilisateurs, SSO Moodle
-│   ├── jwtConfig.js              JWT sliding session (renouvelé à 50% du TTL)
+│   ├── jwtConfig.js              JWT sliding session, résolution du token (Bearer + cookies)
+│   ├── usernames.js              Validation / normalisation des identifiants
 │   ├── rateLimit.js              Rate limiting Redis (login, checkanswer, precheck)
 │   ├── feedbackWorker.js         Worker queue Redis robuste (1 job IA à la fois, recovery au crash)
 │   ├── llmClient.js              Client LM Studio (response_format json_schema)
@@ -76,6 +77,7 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 │   │   ├── js/                   algomaze, level-editor, tutorial, app-shell, auth, common
 │   │   ├── css/styles.css        Thème clair/sombre, composants UI
 │   │   └── assets/               Tilesets et sprites
+│   ├── test/                     Faux Redis en mémoire + tests d'intégration (npm test)
 │   └── *.html                    Pages : login, register, algomaze, docs, level-editor,
 │                                 progress, live, solutions
 └── moodle_plugin/algomazevalidation/   Plugin Moodle (activité + SSO HMAC)
@@ -101,7 +103,17 @@ cp .env.example .env
 node index.js
 ```
 
-L'application est alors disponible sur http://localhost:3000.
+L'application est alors disponible sur http://localhost:3000 (port modifiable via `PORT`).
+
+### Tests et lancement sans Redis
+
+```sh
+cd server
+npm run dev    # serveur avec un faux Redis en mémoire (comptes alice/alice123 et admin/admin123, 3 niveaux)
+npm test       # tests d'intégration de l'authentification (SSO, cookies, Bearer, validation des entrées)
+```
+
+`node test/sso-url.mjs <username> [level] [moodleid] [ageSeconds]` génère une URL SSO signée comme le ferait le plugin Moodle, pratique pour tester le flux à la main.
 
 ### Variables d'environnement (`server/.env`)
 
@@ -113,6 +125,9 @@ L'application est alors disponible sur http://localhost:3000.
 | `LMSTUDIO_MODEL` | Identifiant du modèle chargé dans LM Studio |
 | `LMSTUDIO_API_KEY` | *Optionnel* — clé envoyée en `Authorization: Bearer <key>` (utile si LM Studio est exposé derrière un reverse proxy avec auth). |
 | `MOODLE_SHARED_SECRET` | Secret HMAC partagé avec le plugin Moodle pour le SSO |
+| `SSO_MAX_AGE_SECONDS` | *Optionnel* — durée de validité d'un lien SSO signé (défaut : 600 s). Le plugin v1.4+ signe le lien au clic ; les versions antérieures le signaient au rendu de la page Moodle, d'où une fenêtre large. |
+| `PORT` | *Optionnel* — port d'écoute (défaut : 3000). |
+| `APP_ORIGIN` | *Optionnel* — origine autorisée pour CORS / Socket.IO si le front est servi depuis une autre origine (défaut : `http://localhost:3000`, sans effet en déploiement mono-origine). |
 | `EFE_API_BASE_URL` | *Optionnel* — URL racine de l'API EFE (ex. `https://efe.example.com/apiMoodle`). Si absent, la remontée des compétences est désactivée. |
 | `EFE_API_KEY` | *Optionnel* — clé envoyée en header `X-Moodle-Key` à l'API EFE. |
 | `EFE_COMPETENCE_CODE` | *Optionnel* — code de la compétence évaluée par AlgoMaze (ex. `C01.1.a`, cf. `GET /apiMoodle/competences`). |
@@ -181,6 +196,8 @@ Le plugin `mod_algomazevalidation` permet d'intégrer AlgoMaze comme activité d
    - **URL de base AlgoMaze** : par exemple `https://algomaze.example.com` (sans `/` final).
    - **Secret partagé SSO** : la même valeur que `MOODLE_SHARED_SECRET` dans `server/.env`.
 4. Ajouter une activité « Algomaze validation » dans un cours et indiquer le numéro de niveau cible.
+
+Le bouton « Aller sur Algomaze » de la page d'activité pointe vers `launch.php`, qui signe l'URL SSO **au moment du clic** (horodatage frais) puis redirige vers `/sso/from-moodle`. AlgoMaze rejette les liens plus anciens que `SSO_MAX_AGE_SECONDS` (anti-rejeu) avec une page d'erreur explicite. Les invités Moodle ne peuvent pas lancer l'activité (pas d'identité exploitable côté AlgoMaze).
 
 À la première connexion, le compte AlgoMaze est créé automatiquement (mot de passe non utilisable). Les comptes existants avec le même username sont liés sans perte de progression.
 

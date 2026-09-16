@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import { createClient } from 'redis';
 import vm from 'node:vm';
 import http from 'node:http';
+import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
@@ -12,7 +12,11 @@ import { Direction, SwitchState } from './shared.js';
 import userRouter from './routes/user.js';
 import redisClient from './redisClient.js';
 import { __dirname } from './utils.js';
-import { generateToken, verifyToken, userFromToken, slidingRefresh, TOKEN_COOKIE_OPTIONS, getTokenFromReq, requireUser, requireAdmin } from './jwtConfig.js';
+import {
+    generateToken, slidingRefresh, resolveToken, resolveTokenFrom, cookieTokenCandidates,
+    setTokenCookie, clearTokenCookie, loadUser, requireUser, requireAdmin
+} from './jwtConfig.js';
+import { isValidUsername, normalizeUsername } from './usernames.js';
 import config from './config.json' assert { type: 'json' };
 import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
 import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp, computeEfeCouleur } from './badges.js';
@@ -22,95 +26,144 @@ import { loginLimiter, checkAnswerLimiter, precheckLimiter } from './rateLimit.j
 import { recordEvent as recordPresenceEvent, setIo as setPresenceIo, getSnapshot as getPresenceSnapshot } from './presence.js';
 const app = express();
 // Trust Apache reverse proxy : req.ip renvoie la vraie IP client (X-Forwarded-For)
-// au lieu de l'IP du proxy. Indispensable pour que le rate-limiting fonctionne par IP.
+// au lieu de l'IP du proxy. Indispensable pour que le rate-limiting fonctionne par IP,
+// et pour que req.secure reflète X-Forwarded-Proto (cookie Secure en HTTPS).
 app.set('trust proxy', 1);
 app.use(express.json());
+// Origine autorisée pour CORS / Socket.IO. En déploiement mono-origine (Apache devant
+// Node), l'application est servie depuis la même origine et ce réglage est sans effet.
+const APP_ORIGIN = process.env.APP_ORIGIN || 'http://localhost:3000';
 app.use(cors({
-    origin: 'http://localhost:3000', // Remplacez par votre domaine
+    origin: APP_ORIGIN,
     credentials: true,
     exposedHeaders: ['X-Refreshed-Token']
 }));
 app.use(cookieParser());
-app.use(express.static('public'))
+// Chemin absolu : ne dépend pas du répertoire courant au lancement du process.
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Sliding refresh pour les requêtes API authentifiées via Bearer token.
-// Si plus de la moitié du TTL est écoulée, on régénère le token et on l'expose
-// au client via le header X-Refreshed-Token (le client met à jour son storage).
+// ---------------------------------------------------------------------------
+// Middleware de session (toutes les routes dynamiques).
+//
+//  - Résout le token d'authentification à partir de l'en-tête Bearer ET des cookies
+//    (tous les cookies `token`, pas seulement le premier), et garde le token valide
+//    le plus récent dans req.auth (null si aucun).
+//  - Sliding refresh : si plus de la moitié du TTL est écoulée, on régénère le token,
+//    on le repose en cookie (Set-Cookie) et on l'expose via X-Refreshed-Token pour
+//    que le client mette à jour son localStorage.
+//  - Les réponses dynamiques ne sont jamais mises en cache.
+// ---------------------------------------------------------------------------
 app.use((req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        const result = slidingRefresh(token);
+    const auth = resolveToken(req);
+    req.auth = auth;
+    if (auth) {
+        const result = slidingRefresh(auth.token);
         if (result.refreshed) {
+            setTokenCookie(req, res, result.token);
             res.setHeader('X-Refreshed-Token', result.token);
+            req.auth = { token: result.token, decoded: auth.decoded };
         }
     }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store'); // pour certains CDN
     next();
 });
 
 app.use('/user', userRouter);
 
-// Middleware pour vérifier l'authentification (cookie pour les pages HTML)
-app.use((req, res, next) => {
-    const token = req.cookies.token;
-    const publicPaths = ['/login', '/register', '/user/login', '/', '/user/register', '/check_completion', '/sso/from-moodle']; // Ajoutez ici les routes publiques
+// Garde pour les pages HTML : redirige vers /login si aucun token valide n'est présenté.
+// Les routes API n'utilisent PAS cette garde : elles répondent 401 en JSON via requireUser,
+// ce qui permet au client de réagir proprement (au lieu de suivre une redirection vers
+// la page de login et d'échouer à parser du HTML).
+function requirePage(req, res, next) {
+    if (req.auth) return next();
+    // Cookie présent mais invalide/expiré : on le nettoie pour éviter de le renvoyer en boucle.
+    if (cookieTokenCandidates(req.headers.cookie).length > 0) clearTokenCookie(res);
+    return res.redirect('/login');
+}
 
-    if (publicPaths.includes(req.path)) {
-        return next();
-    }
-
-    if (token) {
-        try {
-            const decoded = verifyToken(token);
-            req.user = decoded;
-
-
-            // Sliding refresh sur le cookie : on renouvelle si plus de la moitié du TTL est écoulée.
-            const refreshResult = slidingRefresh(token);
-            if (refreshResult.refreshed) {
-                res.cookie('token', refreshResult.token, TOKEN_COOKIE_OPTIONS);
-                res.setHeader('X-Refreshed-Token', refreshResult.token);
-            }
-
-            // Disable result caching:
-            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-            res.setHeader('Pragma', 'no-cache');
-            res.setHeader('Expires', '0');
-            res.setHeader('Surrogate-Control', 'no-store'); // pour certains CDN
-            //console.log('Token valid, user authenticated');
-
-            return next();
-        } catch (err) {
-            res.clearCookie('token');
+// Garde admin pour les pages HTML : /login si non authentifié, /maze si pas admin.
+async function requireAdminPage(req, res, next) {
+    if (!req.auth) return requirePage(req, res, next);
+    try {
+        const user = await loadUser(req.auth.decoded.userId);
+        if (!user) {
+            clearTokenCookie(res);
             return res.redirect('/login');
         }
-    } else {
-        return res.redirect('/login');
+        if (!user.isAdmin) return res.redirect('/maze');
+        return next();
+    } catch (error) {
+        console.log('[ERROR] requireAdminPage ' + error);
+        return res.status(500).send({ error: 'Unexpected error' });
     }
-});
+}
 
-const port = 3000;
+// Sert une page HTML sans en-tête de cache (sendFile poserait un max-age=0 public).
+function sendPage(res, file) {
+    res.sendFile(path.join(__dirname, file), { cacheControl: false });
+}
+
+const port = parseInt(process.env.PORT, 10) || 3000;
 
 // Routes publiques
 app.get('/login', (req, res) => {
-    res.sendFile(__dirname + '/login.html');
+    sendPage(res, 'login.html');
 });
 
 app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/login.html');
+    sendPage(res, 'login.html');
 });
 
 app.get('/register', (req, res) => {
-    res.sendFile(__dirname + '/register.html');
+    sendPage(res, 'register.html');
 });
 
+// ---------------------------------------------------------------------------
 // SSO depuis Moodle.
-// Le plugin Moodle (mod_algomazevalidation) redirige l'étudiant ici avec
-// son username Moodle, le numéro de niveau de l'activité et une signature HMAC
-// du payload "username:level:timestamp" pour éviter qu'un tiers fabrique une URL.
-// Si le compte AlgoMaze n'existe pas, on l'auto-provisionne.
-// Si un compte avec le même username existe déjà (créé manuellement), on le lie
-// transparenment au SSO en marquant moodleManaged=true.
+// Le plugin Moodle (mod_algomazevalidation) redirige l'étudiant ici avec son username
+// Moodle, le numéro de niveau de l'activité, son id Moodle et une signature HMAC du
+// payload "username:level:timestamp[:moodleid]" pour éviter qu'un tiers fabrique une URL.
+// Si le compte AlgoMaze n'existe pas, on l'auto-provisionne. Si un compte avec le même
+// username existe déjà (créé manuellement), on le lie transparenment au SSO en marquant
+// moodleManaged=true.
+//
+// Fenêtre anti-rejeu : SSO_MAX_AGE_SECONDS (défaut 10 min). Le plugin v1.4+ signe l'URL
+// au moment du clic (launch.php) ; les versions antérieures la signaient au rendu de la
+// page d'activité, d'où une fenêtre volontairement large pour absorber le temps de
+// lecture de la consigne et un éventuel décalage d'horloge entre les serveurs.
+// ---------------------------------------------------------------------------
+const SSO_MAX_AGE_SECONDS = parseInt(process.env.SSO_MAX_AGE_SECONDS, 10) || 600;
+
+function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Page d'erreur SSO lisible par un étudiant (plutôt qu'un texte brut).
+function sendSsoError(res, status, title, message) {
+    res.status(status).type('html').send(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${escapeHtml(title)} — AlgoMaze</title>
+    <link rel="icon" href="/assets/favicon.ico">
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body class="auth-shell">
+    <main class="auth-card">
+        <div class="app-brand-icon">🧩</div>
+        <h1>${escapeHtml(title)}</h1>
+        <p class="auth-subtitle">${escapeHtml(message)}</p>
+        <p class="auth-subtitle">Reviens sur la page Moodle de l'activité et clique à nouveau sur le bouton « Aller sur Algomaze ».</p>
+        <div class="links">Tu as un mot de passe AlgoMaze ? <a href="/login">Se connecter</a></div>
+    </main>
+</body>
+</html>`);
+}
+
 app.get('/sso/from-moodle', async (req, res) => {
     try {
         const { username, level, timestamp, signature, moodleid } = req.query;
@@ -118,24 +171,25 @@ app.get('/sso/from-moodle', async (req, res) => {
 
         if (!secret) {
             console.error('[SSO] MOODLE_SHARED_SECRET non configuré');
-            return res.status(500).send('SSO non configuré côté serveur AlgoMaze.');
+            return sendSsoError(res, 500, 'SSO non configuré', 'La connexion automatique depuis Moodle n\'est pas configurée côté serveur AlgoMaze. Préviens ton enseignant.');
         }
         if (!username || !timestamp || !signature) {
-            return res.status(400).send('Paramètres SSO manquants.');
+            return sendSsoError(res, 400, 'Lien incomplet', 'Il manque des paramètres dans le lien de connexion.');
         }
 
-        // Anti-replay : on accepte une fenêtre de 60 secondes.
+        // Anti-replay : fenêtre de validité du lien signé.
         const now = Math.floor(Date.now() / 1000);
         const ts = parseInt(timestamp, 10);
-        if (isNaN(ts) || Math.abs(now - ts) > 60) {
-            return res.status(403).send('Lien SSO expiré. Reviens sur Moodle et rouvre l\'activité.');
+        if (isNaN(ts) || Math.abs(now - ts) > SSO_MAX_AGE_SECONDS) {
+            console.warn('[SSO] lien expiré pour ' + String(username).slice(0, 64) + ' (âge ' + (now - ts) + ' s)');
+            return sendSsoError(res, 403, 'Lien expiré', 'Ce lien de connexion n\'est plus valable (il a été généré il y a trop longtemps).');
         }
 
         // Vérification de signature en temps constant.
         // Le payload inclut le moodleid quand il est fourni (plugin v1.3+),
         // mais reste compatible avec les anciens plugins qui ne l'envoyaient pas.
         const lvl = parseInt(level, 10) || 0;
-        const uname = String(username).toLowerCase();
+        const uname = normalizeUsername(username);
         const mid = moodleid != null ? parseInt(moodleid, 10) : NaN;
         const payload = !isNaN(mid)
             ? uname + ':' + lvl + ':' + ts + ':' + mid
@@ -147,10 +201,17 @@ app.get('/sso/from-moodle', async (req, res) => {
             sigBuf = Buffer.from(String(signature), 'hex');
             expBuf = Buffer.from(expected, 'hex');
         } catch (e) {
-            return res.status(403).send('Signature SSO invalide.');
+            return sendSsoError(res, 403, 'Signature invalide', 'La signature du lien de connexion est incorrecte.');
         }
         if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-            return res.status(403).send('Signature SSO invalide.');
+            return sendSsoError(res, 403, 'Signature invalide', 'La signature du lien de connexion est incorrecte (secret partagé différent entre Moodle et AlgoMaze ?).');
+        }
+
+        // La signature est valide : le username vient bien de Moodle. On refuse tout de
+        // même les caractères qui casseraient les clés Redis (":" et jokers).
+        if (!isValidUsername(uname)) {
+            console.warn('[SSO] username refusé : ' + JSON.stringify(uname));
+            return sendSsoError(res, 400, 'Identifiant invalide', 'Ton identifiant Moodle contient des caractères non pris en charge par AlgoMaze. Préviens ton enseignant.');
         }
 
         // Auto-provisioning : crée le compte si nécessaire, sinon lie l'existant.
@@ -187,29 +248,34 @@ app.get('/sso/from-moodle', async (req, res) => {
         }
 
         // Pose le cookie JWT (même format que /user/login) et redirige vers le jeu.
+        // Ce cookie remplace tout cookie `token` posé précédemment sur cette origine ;
+        // si un autre cookie `token` traîne (domaine parent, autre path), la résolution
+        // multi-candidats côté serveur et côté client l'ignorera.
         const token = generateToken(uname);
-        res.cookie('token', token, TOKEN_COOKIE_OPTIONS);
+        setTokenCookie(req, res, token);
         const target = lvl > 0 ? '/maze?level=' + lvl : '/maze';
         return res.redirect(target);
     } catch (error) {
         console.log('[ERROR] /sso/from-moodle ' + error);
-        res.status(500).send('Erreur SSO.');
+        return sendSsoError(res, 500, 'Erreur SSO', 'Une erreur inattendue est survenue pendant la connexion automatique.');
     }
 });
 
-// Routes protégées :
+// Routes protégées (pages HTML) :
 
-app.get('/maze', (req, res) => {
-    res.sendFile(__dirname + '/algomaze.html');
+app.get('/maze', requirePage, (req, res) => {
+    sendPage(res, 'algomaze.html');
 });
 
 // Documentation des fonctions du jeu (accessible à tous les utilisateurs authentifiés).
-app.get('/docs', (req, res) => {
-    res.sendFile(__dirname + '/docs.html');
+app.get('/docs', requirePage, (req, res) => {
+    sendPage(res, 'docs.html');
 });
 
 // Seuils publics utilisés par la page /docs pour afficher les paliers de maîtrise.
-app.get('/api/docs-config', (req, res) => {
+app.get('/api/docs-config', async (req, res) => {
+    const ctx = await requireUser(req, res);
+    if (!ctx) return;
     res.json({
         masteryThresholds: config.masteryThresholds || { fragile: 20, satisfaisante: 40, tresBonne: 70 },
         totalLevels: config.totalLevels || 42,
@@ -217,86 +283,20 @@ app.get('/api/docs-config', (req, res) => {
     });
 });
 
-app.get('/editor', async (req, res) => {
-    const token = req.cookies.token;
-    if (token) {
-        try {
-            const decoded = verifyToken(token);
-            req.user = decoded;
-
-            var user = JSON.parse(await redisClient.get('user:' + decoded.userId));
-            if(user.isAdmin)
-                res.sendFile(__dirname + '/level-editor.html');
-            else
-                res.redirect('/maze');
-        }
-        catch(error)
-        {
-            res.status(500).send({error: "Unexpected error"});
-        }
-    }
-    else
-        res.status(403).send({error: "Not authenticated"});
+app.get('/editor', requireAdminPage, (req, res) => {
+    sendPage(res, 'level-editor.html');
 });
 
-app.get('/progress', async (req, res) => {
-    const token = req.cookies.token;
-    if (token) {
-        try {
-            const decoded = verifyToken(token);
-            req.user = decoded;
-
-            var user = JSON.parse(await redisClient.get('user:' + decoded.userId));
-            if(user.isAdmin)
-                res.sendFile(__dirname + '/progress.html');
-            else
-                res.redirect('/maze');
-        }
-        catch(error)
-        {
-            res.status(500).send({error: "Unexpected error"});
-        }
-    }
-    else
-        res.status(403).send({error: "Not authenticated"});
+app.get('/progress', requireAdminPage, (req, res) => {
+    sendPage(res, 'progress.html');
 });
 
-app.get('/live', async (req, res) => {
-    const token = req.cookies.token;
-    if (token) {
-        try {
-            const decoded = verifyToken(token);
-            const user = JSON.parse(await redisClient.get('user:' + decoded.userId));
-            if (user.isAdmin)
-                res.sendFile(__dirname + '/live.html');
-            else
-                res.redirect('/maze');
-        }
-        catch(error) {
-            res.status(500).send({ error: "Unexpected error" });
-        }
-    }
-    else
-        res.status(403).send({ error: "Not authenticated" });
+app.get('/live', requireAdminPage, (req, res) => {
+    sendPage(res, 'live.html');
 });
 
-app.get('/solutions', async (req, res) => {
-    const token = req.cookies.token;
-    if (token) {
-        try {
-            const decoded = verifyToken(token);
-            const user = JSON.parse(await redisClient.get('user:' + decoded.userId));
-            if (user.isAdmin)
-                res.sendFile(__dirname + '/solutions.html');
-            else
-                res.redirect('/maze');
-        }
-        catch(error) {
-            res.status(500).send({ error: "Unexpected error" });
-        }
-    }
-    else
-        res.status(403).send({ error: "Not authenticated" });
+app.get('/solutions', requireAdminPage, (req, res) => {
+    sendPage(res, 'solutions.html');
 });
 
 // API :
@@ -322,7 +322,7 @@ app.get('/levels', async (req, res) => {
 
         sentence.sort(function(a, b){return a-b});
 
-        res.send(JSON.stringify(sentence));
+        res.json(sentence);
     }
     catch(error)
     {
@@ -334,18 +334,20 @@ app.get('/levels', async (req, res) => {
 app.get('/level/:uid', async (req, res) => {
     try
     {
-        var levelId = req.params.uid;
+        const levelId = parseLevelId(req.params.uid);
+        if (levelId === null) return res.status(400).send({ error: 'Invalid level id' });
         const ctx = await requireUser(req, res);
         if (!ctx) return;
         const user = ctx.user;
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
         {
             var result = await loadLevel(levelId);
+            if (!result) return res.status(404).send({ error: 'Level not found' });
             // Vue live : on note que l'étudiant a chargé ce niveau.
             if (!user.isAdmin) {
-                recordPresenceEvent(user.username, { type: 'view-level', levelId: parseInt(levelId) });
+                recordPresenceEvent(user.username, { type: 'view-level', levelId });
             }
-            res.send(result);
+            res.type('application/json').send(result);
         }
         else
         {
@@ -355,13 +357,14 @@ app.get('/level/:uid', async (req, res) => {
     catch(error)
     {
         console.log("[ERROR] /level/:uid " + error);
-        res.send({error: error});
+        res.status(500).send({ error: 'Failed to load level' });
     }
 });
 
 app.get('/level/:uid/usersolution', async (req, res) => {
     try {
-        var levelId = req.params.uid;
+        const levelId = parseLevelId(req.params.uid);
+        if (levelId === null) return res.status(400).send({ error: 'Invalid level id' });
         const ctx = await requireUser(req, res);
         if (!ctx) return;
         const user = ctx.user;
@@ -373,7 +376,7 @@ app.get('/level/:uid/usersolution', async (req, res) => {
             if(stored != null && stored.length > 0)
                 solution = stored;
 
-            res.send(solution);
+            res.type('text/plain').send(solution);
         }
         else
         {
@@ -390,14 +393,18 @@ app.get('/level/:uid/usersolution', async (req, res) => {
 app.post('/checkanswer', checkAnswerLimiter, async (req, res) => {
 
     try {
-        const { levelId, code, signals } = req.body;
+        const { levelId, code } = parseSubmission(req.body);
+        const signals = req.body && req.body.signals;
+        if (levelId === null || code === null) return res.status(400).send({ error: 'Invalid submission' });
         const ctx = await requireUser(req, res);
         if (!ctx) return;
         const user = ctx.user;
 
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
         {
-            var levelData = JSON.parse(await loadLevel(levelId));
+            const levelRaw = await loadLevel(levelId);
+            if (!levelRaw) return res.status(404).send({ error: 'Level not found' });
+            var levelData = JSON.parse(levelRaw);
             var hasRandomTiles = levelData.randomTile != null && levelData.randomTile.length > 0;
 
             var runOutcome = { ok: false, timeout: false, error: null };
@@ -460,14 +467,18 @@ app.post('/checkanswer', checkAnswerLimiter, async (req, res) => {
 // Retourne { ok, timeout, error }.
 app.post('/precheck', precheckLimiter, async (req, res) => {
     try {
-        const { levelId, code, signals } = req.body;
+        const { levelId, code } = parseSubmission(req.body);
+        const signals = req.body && req.body.signals;
+        if (levelId === null || code === null) return res.status(400).send({ error: 'Invalid submission' });
         const ctx = await requireUser(req, res);
         if (!ctx) return;
         const user = ctx.user;
 
         if(user.lastCompletedLevel >= levelId - 1 || user.isAdmin)
         {
-            const levelData = JSON.parse(await loadLevel(levelId));
+            const levelRaw = await loadLevel(levelId);
+            if (!levelRaw) return res.status(404).send({ error: 'Level not found' });
+            const levelData = JSON.parse(levelRaw);
             const outcome = tryRunUserCode(levelData, code);
 
             // Sauvegarde la dernière version du code + entrée dans l'historique.
@@ -497,7 +508,8 @@ app.post('/savelevel/:uid', async (req, res) => {
         const ctx = await requireAdmin(req, res);
         if (!ctx) return;
         const levelData = req.body;
-        var levelId = req.params.uid;
+        var levelId = parseLevelId(req.params.uid);
+        if (levelId === null) return res.status(400).send({ error: 'Invalid level id' });
         levelId = await saveLevel(levelData, levelId);
         res.send({ levelId: levelId, status: 'Level saved successfully' });
     } catch (error) {
@@ -565,7 +577,8 @@ app.get('/admin/solutions/user/:username', async (req, res) => {
         const ctx = await requireAdmin(req, res);
         if (!ctx) return;
 
-        const username = req.params.username.toLowerCase();
+        const username = normalizeUsername(req.params.username);
+        if (!isValidUsername(username)) return res.status(400).send({ error: 'Invalid username' });
         const solutionKeys = await redisClient.keys('usersolution:' + username + ':level:*');
         const result = [];
         for (const key of solutionKeys) {
@@ -638,15 +651,18 @@ app.get('/admin/similarity/level/:levelId', async (req, res) => {
 app.post('/check_completion', async (req, res) => {
     try
     {
-        const checkData = req.body;
-        var user = checkData.username.toLowerCase();
-        var level = checkData.levelnumber;
+        const checkData = req.body || {};
+        const user = normalizeUsername(checkData.username);
+        const level = parseInt(checkData.levelnumber, 10);
+        if (!user || !Number.isInteger(level)) {
+            return res.status(400).send({ error: 'username et levelnumber requis' });
+        }
 
         if(await redisClient.exists('user:' + user))
         {
             var storedUser = await redisClient.get('user:' + user);
             storedUser = JSON.parse(storedUser);
-            var result = storedUser.lastCompletedLevel >= level;
+            var result = (parseInt(storedUser.lastCompletedLevel, 10) || 0) >= level;
             res.status(200).send({ completed: result });
         }
         else
@@ -918,7 +934,8 @@ app.post('/admin/regenerate-feedback/:username/:levelId', async (req, res) => {
     try {
         const ctx = await requireAdmin(req, res);
         if (!ctx) return;
-        const username = req.params.username.toLowerCase();
+        const username = normalizeUsername(req.params.username);
+        if (!isValidUsername(username)) return res.status(400).send({ error: 'Invalid username' });
         const levelId = parseInt(req.params.levelId);
 
         // Refuse si une évaluation est déjà en attente — évite les doublons en file.
@@ -963,7 +980,8 @@ app.get('/admin/feedback/:username/:levelId', async (req, res) => {
     try {
         const ctx = await requireAdmin(req, res);
         if (!ctx) return;
-        const username = req.params.username.toLowerCase();
+        const username = normalizeUsername(req.params.username);
+        if (!isValidUsername(username)) return res.status(400).send({ error: 'Invalid username' });
         const levelId = parseInt(req.params.levelId);
         const status = await getFeedbackStatus(username, levelId);
         const result = await getFeedbackResult(username, levelId);
@@ -976,14 +994,21 @@ app.get('/admin/feedback/:username/:levelId', async (req, res) => {
 
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, {
-    cors: { origin: 'http://localhost:3000', credentials: true }
+    cors: { origin: APP_ORIGIN, credentials: true }
 });
 
 io.use(async (socket, next) => {
     try {
-        const token = socket.handshake.auth && socket.handshake.auth.token;
-        if (!token) return next(new Error('No token'));
-        const user = await userFromToken(token);
+        // Token fourni par le client (auth.token) et/ou cookie envoyé avec le handshake :
+        // même résolution multi-candidats que pour les routes HTTP, pour qu'un token
+        // périmé en localStorage n'empêche pas la connexion temps réel.
+        const provided = socket.handshake.auth && socket.handshake.auth.token;
+        const authHeader = provided ? 'Bearer ' + provided : undefined;
+        const cookieHeader = socket.handshake.headers && socket.handshake.headers.cookie;
+        const auth = resolveTokenFrom(authHeader, cookieHeader);
+        if (!auth) return next(new Error('No token'));
+        const user = await loadUser(auth.decoded.userId);
+        if (!user) return next(new Error('Authentication error'));
         socket.data.username = user.username;
         socket.data.isAdmin = !!user.isAdmin;
         next();
@@ -1027,6 +1052,24 @@ await startFeedbackWorker(io);
 async function loadLevel(levelId)
 {
     return await redisClient.get("level:" + levelId);
+}
+
+// Identifiant de niveau : entier >= 1 (accepte "2" comme 2). Retourne null sinon.
+function parseLevelId(raw)
+{
+    if (raw === null || raw === undefined || raw === '') return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+// Corps d'une soumission (/checkanswer, /precheck) : { levelId, code } validés (null si invalide).
+function parseSubmission(body)
+{
+    const b = body || {};
+    return {
+        levelId: parseLevelId(b.levelId),
+        code: typeof b.code === 'string' ? b.code : null
+    };
 }
 
 // Exécute checkAnswer en isolant les erreurs : distingue un timeout (boucle infinie probable)
@@ -1106,17 +1149,13 @@ function sanitizeSignals(raw)
 async function saveLevel(data, lvlId)
 {
     var levelId = lvlId;
-    var updateLvlId = false;
     if(levelId == -1)
     {
-        levelId = await redisClient.get('levelid'); // Générer un ID unique pour le niveau
-        levelId++;
-        updateLvlId = true;
+        // INCR est atomique : deux sauvegardes simultanées ne peuvent pas obtenir le même id.
+        levelId = await redisClient.incr('levelid');
     }
 
     await redisClient.set(`level:${levelId}`, JSON.stringify(data));
-    if(updateLvlId)
-        await redisClient.set('levelid', levelId);
 
     return levelId;
 }

@@ -195,8 +195,10 @@
                 });
             });
 
-            const token = localStorage.getItem('token');
-            const socket = io({ auth: { token } });
+            // Token le plus frais à chaque (re)connexion ; le serveur accepte aussi le cookie.
+            const socket = io({
+                auth: (cb) => cb({ token: window.AlgoAuth ? window.AlgoAuth.getToken() : localStorage.getItem('token') })
+            });
 
             socket.on('connect_error', (err) => {
                 showNotification('Connexion temps réel impossible : ' + err.message, 'error');

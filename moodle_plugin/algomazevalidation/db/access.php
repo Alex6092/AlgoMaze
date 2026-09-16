@@ -21,7 +21,8 @@ $capabilities = array(
         ),
         'default' => CAP_ALLOW,
     ),
-    'mod/algomaze_validation:complete' => array(
+    // Nom corrigé (était « mod/algomaze_validation:complete », composant inexistant).
+    'mod/algomazevalidation:complete' => array(
         'captype' => 'write',
         'contextlevel' => CONTEXT_MODULE,
         'archetypes' => array(
@@ -33,4 +34,3 @@ $capabilities = array(
         )
     ),
 );
-

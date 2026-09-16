@@ -401,7 +401,12 @@
                 });
 
                 // Connexion socket.io pour recevoir les feedbacks IA en push.
-                const socket = io({ auth: { token } });
+                // `auth` est une fonction : appelée à chaque (re)connexion, elle fournit le
+                // token le plus frais (et non celui capturé au chargement de la page, qui
+                // peut avoir été renouvelé depuis). Le serveur accepte aussi le cookie.
+                const socket = io({
+                    auth: (cb) => cb({ token: window.AlgoAuth ? window.AlgoAuth.getToken() : localStorage.getItem('token') })
+                });
                 socket.on('feedback:ready', (payload) => {
                     if (payload.levelId === currentLevelId) {
                         displayFeedback('done', payload.result);
@@ -531,6 +536,8 @@
                             await fetchLevels();
                             updateNextLevelButton();
                             displayFeedback('pending', null);
+                            // La pastille d'avancement du header (Niv. X/42) dépend de lastCompletedLevel.
+                            if (window.AppShell) window.AppShell.refreshRank();
                         } else {
                             showNotification('La solution n\'est pas valide, persévère !', 'error');
                         }
@@ -564,7 +571,7 @@
                             headers: { 'Authorization': 'Bearer ' + token },
                             credentials: 'include'
                         });
-                        if (!response.ok) throw new Error('Network response was not ok');
+                        if (!response.ok) throw new Error('Erreur ' + response.status);
                         levelsIds = await response.json();
                         displayLevels(levelsIds);
                     } catch (error) {
@@ -599,6 +606,9 @@
                         if (!response.ok) throw new Error('Network response was not ok');
                         let progress = await response.json();
                         playerLastCompletedLevel = progress.progress;
+
+                        // Liste des niveaux indisponible (erreur réseau déjà notifiée) : rien à charger.
+                        if (!levelsIds.length) return;
 
                         // Si un niveau est explicitement demandé (ex. arrivée depuis Moodle via /maze?level=N)
                         // et que l'étudiant y a accès (présent dans levelsIds, qui est filtré côté serveur),
