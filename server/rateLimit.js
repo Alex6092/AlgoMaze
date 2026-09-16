@@ -8,21 +8,20 @@
 // l'username extrait du JWT pour les routes authentifiées.
 
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import { decodeToken } from './jwtConfig.js';
+import { decodeToken, tokenCandidates } from './jwtConfig.js';
 
 // Récupère le username sans vérifier la signature : c'est suffisant pour
 // bucketiser les requêtes du rate-limiter (un token forgé crée juste un
-// bucket à part, sans impact).
+// bucket à part, sans impact). On privilégie le token déjà résolu par le
+// middleware de session (req.auth) quand il est disponible.
 function userKeyFromToken(req) {
-    const auth = req.headers && req.headers.authorization;
-    const token = (auth && auth.startsWith('Bearer '))
-        ? auth.substring(7)
-        : (req.cookies && req.cookies.token);
-    if (!token) return null;
-    try {
-        const decoded = decodeToken(token);
-        if (decoded && decoded.userId) return decoded.userId;
-    } catch (e) {}
+    if (req.auth && req.auth.decoded && req.auth.decoded.userId) return req.auth.decoded.userId;
+    for (const token of tokenCandidates(req)) {
+        try {
+            const decoded = decodeToken(token);
+            if (decoded && decoded.userId) return decoded.userId;
+        } catch (e) {}
+    }
     return null;
 }
 

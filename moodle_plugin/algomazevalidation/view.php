@@ -1,7 +1,8 @@
 <?php
 // Vue d'une activité Algomaze validation : affiche la page Moodle avec
 //  - le statut de complétion (terminé / non terminé) calculé en appelant AlgoMaze
-//  - un bouton qui ouvre AlgoMaze dans un nouvel onglet via une URL signée HMAC (SSO)
+//  - un bouton qui ouvre AlgoMaze dans un nouvel onglet via launch.php, qui signe
+//    l'URL SSO (HMAC) au moment du clic
 //
 // On n'utilise PLUS de redirection automatique : sans page Moodle visible,
 // l'étudiant ne voyait jamais le statut et le hook de complétion ne se
@@ -22,7 +23,7 @@ if ($id) {
     $course = $DB->get_record('course', array('id' => $algomazevalidation->course), '*', MUST_EXIST);
     $cm = get_coursemodule_from_instance('algomazevalidation', $algomazevalidation->id, $course->id, false, MUST_EXIST);
 } else {
-    print_error('You must specify a course_module ID or an instance ID');
+    throw new moodle_exception('missingparameter');
 }
 
 require_login($course, true, $cm);
@@ -37,8 +38,9 @@ $baseurl = trim((string)get_config('mod_algomazevalidation', 'baseurl'));
 $secret = (string)get_config('mod_algomazevalidation', 'sharedsecret');
 
 // Statut de complétion (appel direct au serveur AlgoMaze pour avoir l'état le plus à jour).
+// Un invité n'a pas de compte AlgoMaze : inutile d'interroger le serveur.
 $levelnumber = (int)$algomazevalidation->levelnumber;
-$iscompleted = !empty($baseurl) ? external_site_check_completion($USER->id, $levelnumber) : false;
+$iscompleted = (!empty($baseurl) && !isguestuser()) ? external_site_check_completion($USER->id, $levelnumber) : false;
 
 // Met à jour l'état de complétion Moodle :
 //   - set_module_viewed enregistre la visite (utile si le critère "vue" est actif),
@@ -49,7 +51,7 @@ $iscompleted = !empty($baseurl) ? external_site_check_completion($USER->id, $lev
 //     qui permet à l'étudiant de voir l'activité passer en "terminée" après avoir
 //     validé son niveau, simplement en rafraîchissant la page Moodle.
 $completion = new completion_info($course);
-if ($completion->is_enabled($cm)) {
+if ($completion->is_enabled($cm) && !isguestuser()) {
     $completion->set_module_viewed($cm);
     $completion->update_state(
         $cm,
@@ -78,6 +80,12 @@ if (empty($baseurl) || empty($secret)) {
     exit;
 }
 
+if (isguestuser()) {
+    echo $OUTPUT->notification(get_string('noguest'), \core\output\notification::NOTIFY_WARNING);
+    echo $OUTPUT->footer();
+    exit;
+}
+
 if ($iscompleted) {
     echo $OUTPUT->notification(
         get_string('levelcompleted', 'algomazevalidation'),
@@ -90,29 +98,14 @@ if ($iscompleted) {
     );
 }
 
-// Construit l'URL signée vers AlgoMaze (SSO HMAC).
-// Payload signé : "username:level:timestamp:moodleid" — l'ID Moodle de l'étudiant
-// est inclus pour qu'AlgoMaze puisse le stocker (utile pour la remontée des
-// compétences vers EFE) sans qu'il puisse être falsifié.
-$baseurl = rtrim($baseurl, '/');
-$username = strtolower($USER->username);
-$moodleid = (int)$USER->id;
-$timestamp = time();
-$payload = $username . ':' . $levelnumber . ':' . $timestamp . ':' . $moodleid;
-$signature = hash_hmac('sha256', $payload, $secret);
-
-$ssourl = $baseurl . '/sso/from-moodle?'
-    . 'username=' . rawurlencode($username)
-    . '&level=' . $levelnumber
-    . '&timestamp=' . $timestamp
-    . '&moodleid=' . $moodleid
-    . '&signature=' . $signature;
-
 // Bouton qui ouvre AlgoMaze dans un nouvel onglet (l'étudiant garde la page
 // Moodle ouverte ; à son retour il rafraîchit pour voir le statut mis à jour).
+// Le lien pointe vers launch.php, qui signe l'URL SSO au moment du clic : la
+// fenêtre anti-rejeu côté AlgoMaze démarre donc au clic et non au rendu de cette page.
+$launchurl = new moodle_url('/mod/algomazevalidation/launch.php', array('id' => $cm->id));
 echo html_writer::start_div('algomaze-launch', ['style' => 'text-align: center; margin: 24px 0;']);
 echo html_writer::link(
-    $ssourl,
+    $launchurl,
     get_string('startactivity', 'algomazevalidation'),
     [
         'class' => 'btn btn-primary btn-lg',

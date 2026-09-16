@@ -101,41 +101,28 @@ window.AppShell = (function() {
         if (logoutBtn) logoutBtn.addEventListener('click', logout);
     }
 
+    // Note : l'intercepteur fetch de auth.js ajoute lui-même l'en-tête Authorization
+    // (token le plus frais) sur toutes les requêtes vers notre origine, et le serveur
+    // retombe sur le cookie si besoin. On n'a donc jamais à lire localStorage ici.
     async function logout() {
-        const token = localStorage.getItem('token');
         try {
-            await fetch('/user/logout', {
-                method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + (token || '') },
-                credentials: 'include'
-            });
+            await fetch('/user/logout', { method: 'POST', credentials: 'include' });
         } catch (e) { /* on ignore : on redirige quand même */ }
-        try { localStorage.removeItem('token'); } catch (e) {}
-        document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        if (window.AlgoAuth) window.AlgoAuth.clearSession();
         window.location.href = '/login';
     }
 
     async function fetchMe() {
-        const token = localStorage.getItem('token');
-        if (!token) return null;
         try {
-            const r = await fetch('/user/me', {
-                headers: { 'Authorization': 'Bearer ' + token },
-                credentials: 'include'
-            });
+            const r = await fetch('/user/me', { credentials: 'include' });
             if (!r.ok) return null;
             return await r.json();
         } catch (e) { return null; }
     }
 
     async function refreshRank() {
-        const token = localStorage.getItem('token');
-        if (!token) return;
         try {
-            const r = await fetch('/user/rank', {
-                headers: { 'Authorization': 'Bearer ' + token },
-                credentials: 'include'
-            });
+            const r = await fetch('/user/rank', { credentials: 'include' });
             if (!r.ok) return;
             const data = await r.json();
 
@@ -202,13 +189,10 @@ window.AppShell = (function() {
         if (_keepAliveTimer) return;
         const tick = async () => {
             if (document.visibilityState !== 'visible') return;
-            const token = localStorage.getItem('token');
-            if (!token) return;
+            // Aucun token nulle part (session fermée dans un autre onglet) : inutile d'appeler.
+            if (window.AlgoAuth && !window.AlgoAuth.getToken()) return;
             try {
-                await fetch('/user/me', {
-                    headers: { 'Authorization': 'Bearer ' + token },
-                    credentials: 'include'
-                });
+                await fetch('/user/me', { credentials: 'include' });
                 // L'intercepteur fetch global gère la mise à jour de token si refresh + le 401 si expiré.
             } catch (e) { /* silencieux : ce sera retenté au prochain tick */ }
         };

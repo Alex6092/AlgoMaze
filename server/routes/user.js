@@ -1,35 +1,49 @@
 import express from 'express';
 const router = express.Router();
 import bcrypt from 'bcrypt';
-import { generateToken, verifyToken, userFromToken, TOKEN_COOKIE_OPTIONS, requireUser, requireAdmin } from '../jwtConfig.js';
+import { generateToken, setTokenCookie, clearTokenCookie, requireUser, requireAdmin } from '../jwtConfig.js';
+import { isValidUsername, normalizeUsername, escapeKeyPattern } from '../usernames.js';
 import { loginLimiter } from '../rateLimit.js';
 import { recordEvent as recordPresenceEvent } from '../presence.js';
 import redisClient from '../redisClient.js';
 import config from '../config.json' assert { type: 'json' };
+
+const PASSWORD_MAX_LENGTH = 200;
+
+function isValidPassword(password) {
+    return typeof password === 'string' && password.length > 0 && password.length <= PASSWORD_MAX_LENGTH;
+}
 
 // User registration
 router.post('/register', async (req, res) => {
     if(config.allowRegistration)
     {
         try {
-            var { username, password } = req.body;
-            username = username.toLowerCase();
+            const body = req.body || {};
+            const username = normalizeUsername(body.username);
+            const password = body.password;
+            if (!isValidUsername(username) || !/^[a-z0-9._@+-]+$/.test(username)) {
+                return res.status(400).send({ error: 'Nom d\'utilisateur invalide (lettres, chiffres, . _ @ + - uniquement).' });
+            }
+            if (!isValidPassword(password)) {
+                return res.status(400).send({ error: 'Mot de passe invalide.' });
+            }
             var exists = await redisClient.exists('user:' + username);
             if(!exists)
             {
                 const hashedPassword = await bcrypt.hash(password, 10);
-                const newUser = { 
-                    username: username, 
-                    password: hashedPassword, 
+                const newUser = {
+                    username: username,
+                    password: hashedPassword,
                     lastCompletedLevel: 0,
                     isAdmin: false
                 };
                 await redisClient.set('user:' + username, JSON.stringify(newUser));
                 res.status(201).send({ message: 'User created successfully' });
             }
-            else 
+            else
             {
-                res.status(500).send({ error: 'Error creating user' });
+                res.status(409).send({ error: 'Ce nom d\'utilisateur est déjà pris.' });
             }
         } catch (error) {
             console.log("[ERROR] /user/register " + error);
@@ -47,27 +61,26 @@ router.put('/updatepassword', async (req, res) => {
     {
         const ctx = await requireAdmin(req, res);
         if (!ctx) return;
-        {
-            const userData = req.body;
-            var userToUpdate = userData;
-            var username = userToUpdate.username.toLowerCase();
-            var password = userToUpdate.password;
-            
-            if(await redisClient.exists('user:' + username))
-            {
-                const hashedPassword = await bcrypt.hash(password, 10);
+        const body = req.body || {};
+        const username = normalizeUsername(body.username);
+        const password = body.password;
+        if (!isValidUsername(username)) return res.status(400).send({ error: 'Invalid username' });
+        if (!isValidPassword(password)) return res.status(400).send({ error: 'Invalid password' });
 
-                var updatedUserData = await redisClient.get('user:' + username);
-                updatedUserData = JSON.parse(updatedUserData);
-                updatedUserData.password = hashedPassword;
-                await redisClient.set('user:' + username, JSON.stringify(updatedUserData)); 
-                
-                res.send({ user: userToUpdate.username, status: 'User updated successfully' });
-            }
-            else
-            {
-                res.status(500).send({ error: 'User ' + username + ' does not exists !'});
-            }
+        if(await redisClient.exists('user:' + username))
+        {
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            var updatedUserData = await redisClient.get('user:' + username);
+            updatedUserData = JSON.parse(updatedUserData);
+            updatedUserData.password = hashedPassword;
+            await redisClient.set('user:' + username, JSON.stringify(updatedUserData));
+
+            res.send({ user: username, status: 'User updated successfully' });
+        }
+        else
+        {
+            res.status(404).send({ error: 'User ' + username + ' does not exist !'});
         }
     } catch (error) {
         console.log("[ERROR] /user/updatepassword " + error);
@@ -78,8 +91,12 @@ router.put('/updatepassword', async (req, res) => {
 // User login (rate-limité pour bloquer le brute-force par couple IP+username)
 router.post('/login', loginLimiter, async (req, res) => {
     try {
-        var { username, password } = req.body;
-        username = username.toLowerCase();
+        const body = req.body || {};
+        const username = normalizeUsername(body.username);
+        const password = body.password;
+        if (!isValidUsername(username) || !isValidPassword(password)) {
+            return res.status(400).send({ error: 'Identifiants requis' });
+        }
         var exists = await redisClient.exists('user:' + username);
         if(exists)
         {
@@ -88,23 +105,23 @@ router.post('/login', loginLimiter, async (req, res) => {
             if (!isMatch) return res.status(401).send({ error: 'Invalid credentials' });
 
             const token = generateToken(username);
-            res.cookie('token', token, TOKEN_COOKIE_OPTIONS);
+            setTokenCookie(req, res, token);
             res.send({ token });
         }
         else
         {
             return res.status(404).send({ error: 'User not found' });
         }
-    } 
-    catch (error) 
+    }
+    catch (error)
     {
         console.log("[ERROR] /user/login " + error);
-        res.status(500).send({ error: 'Error logging in' + error });
+        res.status(500).send({ error: 'Error logging in' });
     }
 });
 
 router.post('/logout', (req, res) => {
-    res.clearCookie('token');
+    clearTokenCookie(res);
     res.json({message: 'Logged out successfully'});
 });
 
@@ -147,57 +164,59 @@ router.delete('/delete', async(req, res) => {
         const ctx = await requireAdmin(req, res);
         if (!ctx) return;
         const user = ctx.user;
+        const body = req.body || {};
+        const username = normalizeUsername(body.username);
+        if (!isValidUsername(username)) return res.status(400).send({ error: 'Invalid username' });
+        if(user.username != username)
         {
-            const userData = req.body;
-            var userToDelete = userData;
-            var username = userToDelete.username.toLowerCase();
-            if(user.username != username)
+            var deletedUserData = await redisClient.get('user:' + username);
+            if (!deletedUserData) {
+                return res.status(404).send({ error: 'User ' + username + ' does not exist !' });
+            }
+            deletedUserData = JSON.parse(deletedUserData);
+            if(!deletedUserData.isAdmin)
             {
-                var deletedUserData = await redisClient.get('user:' + username);
-                deletedUserData = JSON.parse(deletedUserData);
-                if(!deletedUserData.isAdmin)
-                {
-                    // Nettoyage complet de toutes les clés Redis liées à cet utilisateur.
-                    // Inclut : compte, solutions, historique, feedbacks IA, signaux comportementaux,
-                    // badges, XP. Si on rate des clés, un compte recréé avec le même username
-                    // hériterait silencieusement des données de l'ancien.
-                    const patterns = [
-                        'user:' + username,
-                        'usersolution:' + username + ':*',
-                        'solutionhistory:' + username + ':*',
-                        'feedback:status:' + username + ':*',
-                        'feedback:result:' + username + ':*',
-                        'signals:' + username + ':*',
-                        'badge:' + username + ':*',
-                        'xp:' + username + ':*',
-                        'efe:last_color:' + username + ':*'
-                    ];
-                    let totalDeleted = 0;
-                    for (const pattern of patterns) {
-                        if (pattern.includes('*')) {
-                            const keys = await redisClient.keys(pattern);
-                            for (const key of keys) {
-                                await redisClient.del(key);
-                                totalDeleted++;
-                            }
-                        } else {
-                            const existed = await redisClient.del(pattern);
-                            totalDeleted += existed;
+                // Nettoyage complet de toutes les clés Redis liées à cet utilisateur.
+                // Inclut : compte, solutions, historique, feedbacks IA, signaux comportementaux,
+                // badges, XP. Si on rate des clés, un compte recréé avec le même username
+                // hériterait silencieusement des données de l'ancien.
+                const u = escapeKeyPattern(username);
+                const patterns = [
+                    'user:' + username,
+                    'usersolution:' + u + ':*',
+                    'solutionhistory:' + u + ':*',
+                    'feedback:status:' + u + ':*',
+                    'feedback:result:' + u + ':*',
+                    'signals:' + u + ':*',
+                    'badge:' + u + ':*',
+                    'xp:' + u + ':*',
+                    'efe:last_color:' + u + ':*'
+                ];
+                let totalDeleted = 0;
+                for (const pattern of patterns) {
+                    if (pattern.includes('*')) {
+                        const keys = await redisClient.keys(pattern);
+                        for (const key of keys) {
+                            await redisClient.del(key);
+                            totalDeleted++;
                         }
+                    } else {
+                        const existed = await redisClient.del(pattern);
+                        totalDeleted += existed;
                     }
-                    console.log('[user/delete] ' + username + ' purged : ' + totalDeleted + ' clé(s) Redis supprimée(s)');
+                }
+                console.log('[user/delete] ' + username + ' purged : ' + totalDeleted + ' clé(s) Redis supprimée(s)');
 
-                    res.send({ user: userToDelete.username, status: 'User deleted successfully', keysRemoved: totalDeleted });
-                }
-                else
-                {
-                    res.status(403).send({ error: 'You cannot delete an admin !'});
-                }
+                res.send({ user: username, status: 'User deleted successfully', keysRemoved: totalDeleted });
             }
             else
             {
-                res.status(403).send({ error: 'You cannot delete yourself !'});
+                res.status(403).send({ error: 'You cannot delete an admin !'});
             }
+        }
+        else
+        {
+            res.status(403).send({ error: 'You cannot delete yourself !'});
         }
     } catch (error) {
         console.log("[ERROR] /user/delete " + error);

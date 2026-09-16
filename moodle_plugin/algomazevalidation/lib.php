@@ -92,6 +92,40 @@ function algomazevalidation_get_completion_state($course, $cm, $userid, $type) {
 }
 
 /**
+ * Construit l'URL SSO signée vers AlgoMaze pour un utilisateur et un niveau.
+ *
+ * Payload signé : "username:level:timestamp:moodleid" — l'ID Moodle de l'étudiant
+ * est inclus pour qu'AlgoMaze puisse le stocker (utile pour la remontée des
+ * compétences vers EFE) sans qu'il puisse être falsifié. L'horodatage doit être
+ * généré au moment de l'utilisation (voir launch.php) : AlgoMaze rejette les liens
+ * trop anciens (anti-rejeu).
+ *
+ * @param string $baseurl URL de base d'AlgoMaze (avec ou sans / final).
+ * @param string $secret Secret HMAC partagé (MOODLE_SHARED_SECRET côté AlgoMaze).
+ * @param stdClass $user Utilisateur Moodle (champs username et id).
+ * @param int $levelnumber Numéro du niveau cible.
+ * @return string URL absolue vers /sso/from-moodle.
+ */
+function algomazevalidation_build_sso_url($baseurl, $secret, $user, $levelnumber) {
+    $baseurl = rtrim(trim((string)$baseurl), '/');
+    // core_text::strtolower gère l'unicode, contrairement à strtolower() ; AlgoMaze
+    // applique de son côté String.prototype.toLowerCase() avant de vérifier la signature.
+    $username = core_text::strtolower($user->username);
+    $moodleid = (int)$user->id;
+    $levelnumber = (int)$levelnumber;
+    $timestamp = time();
+    $payload = $username . ':' . $levelnumber . ':' . $timestamp . ':' . $moodleid;
+    $signature = hash_hmac('sha256', $payload, (string)$secret);
+
+    return $baseurl . '/sso/from-moodle?'
+        . 'username=' . rawurlencode($username)
+        . '&level=' . $levelnumber
+        . '&timestamp=' . $timestamp
+        . '&moodleid=' . $moodleid
+        . '&signature=' . $signature;
+}
+
+/**
  * Fonction personnalisée pour vérifier l'achèvement de l'activité via un site externe.
  *
  * @param int $userid ID de l'utilisateur.
@@ -102,7 +136,7 @@ function external_site_check_completion($userid, $levelnumber) {
     global $DB;
 
     $user = $DB->get_record('user', array('id' => $userid), 'username', MUST_EXIST);
-    $username = strtolower($user->username);
+    $username = core_text::strtolower($user->username);
     $levelnumber = (int)$levelnumber;
 
     // Utilise la même `baseurl` que le SSO (configurée dans les paramètres du plugin).
@@ -123,6 +157,7 @@ function external_site_check_completion($userid, $levelnumber) {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
     curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
     curl_setopt($ch, CURLOPT_TIMEOUT, 5); // Évite que la page Moodle reste bloquée si AlgoMaze ne répond pas.
 
     $response = curl_exec($ch);
@@ -142,19 +177,6 @@ function external_site_check_completion($userid, $levelnumber) {
     }
 
     return false;
-}
-
-function algomazevalidation_completion_criteria($course, $cm, $userid) {
-    global $DB;
-
-    
-    // Récupérer l'instance de l'activité
-    $instance = $DB->get_record('algomazevalidation', array('id' => $cm->instance), '*', MUST_EXIST);
-    $levelnumber = $instance->levelnumber;
-    return external_site_check_completion($userid, $levelnumber); // Mark as completed
-    
-
-    return false; // Not completed
 }
 
 function mod_algomazevalidation_get_completion_active_rule_descriptions($cm) {
