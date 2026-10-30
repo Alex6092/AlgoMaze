@@ -13,7 +13,7 @@ import { register } from 'node:module';
 register(new URL('./loader.mjs', import.meta.url));
 
 const SECRET = 'callback-secret';
-const lb = { posts: [], jobs: new Map(), failPosts: 0 };
+const lb = { posts: [], jobs: new Map(), failPosts: 0, rejectPosts: null };
 const server = http.createServer(async (req, res) => {
     let raw = '';
     for await (const chunk of req) raw += chunk;
@@ -23,6 +23,9 @@ const server = http.createServer(async (req, res) => {
     };
     if (req.headers.authorization !== 'Bearer lb-key') return send(401, { error: { code: 'invalid_api_key' } });
     if (req.method === 'POST' && req.url === '/v1/jobs') {
+        if (lb.rejectPosts) {
+            return send(lb.rejectPosts.status, { error: { code: lb.rejectPosts.code, message: 'Refusé' } });
+        }
         if (lb.failPosts > 0) {
             lb.failPosts--;
             return send(503, { error: { code: 'queue_full', message: 'File pleine' } }, { 'Retry-After': '30' });
@@ -70,6 +73,12 @@ async function deliver(lbJob, evaluation, options) {
     const event = { id: crypto.randomUUID(), type: 'job.succeeded', job_id: lbJob, status: 'succeeded', result: completion(evaluation), error: null };
     const { body, headers } = signed(event, options);
     return worker.handleCallback(jobId, Buffer.from(body), headers);
+}
+
+// Les évaluations réutilisées sont livrées après un court délai ; la relève les
+// livre dès l'échéance passée (ici simulée en avançant l'horloge).
+async function deliverDueReuses() {
+    await worker.pollSubmitted({ now: Date.now() + 60000, staleMs: Infinity });
 }
 
 async function submitPending() {
@@ -158,12 +167,22 @@ describe('évaluations IA via le load balancer', () => {
         const posts = lb.posts.length;
         // Même élève, même solution réécrite : pas de nouvelle chance d'obtenir Platine.
         const renamed = 'let pas = 0\nwhile(!isBlocked()){ moveForward(); pas++ }\nturnLeft()';
+        const before = emitted.length;
         assert.equal(await worker.enqueueFeedbackJob(job('alice', level(1), renamed)), true);
+        // Livrée comme une évaluation ordinaire : d'abord « en cours », puis notifiée.
+        assert.equal(await worker.getFeedbackStatus('alice', level(1)), 'pending');
+        assert.equal(emitted.length, before);
+        await deliverDueReuses();
+        assert.equal(await worker.getFeedbackStatus('alice', level(1)), 'done');
+        assert.equal(emitted.at(-1).event, 'feedback:ready');
+        assert.equal(emitted.at(-1).room, 'user:alice');
+        assert.equal(emitted.at(-1).data.result.reused.match, 'identical');
         let result = await worker.getFeedbackResult('alice', level(1));
         assert.equal(result.reused.match, 'identical');
         assert.equal(result.score, 80);
         // Autre élève, solution identique après normalisation : même évaluation.
         await worker.enqueueFeedbackJob(job('carol', level(1), CODE));
+        await deliverDueReuses();
         result = await worker.getFeedbackResult('carol', level(1));
         assert.equal(result.reused.match, 'identical');
         assert.equal(await worker.getFeedbackStatus('carol', level(1)), 'done');
@@ -187,6 +206,7 @@ avancer();`;
         await deliver(lb.posts.at(-1).id, GOLD);
         const posts = lb.posts.length;
         await worker.enqueueFeedbackJob(job('dave', level(3), base + '\nturnLeft();'));
+        await deliverDueReuses();
         const result = await worker.getFeedbackResult('dave', level(3));
         assert.equal(result.reused.match, 'similar');
         assert.ok(result.reused.similarity >= 0.9);
@@ -206,6 +226,7 @@ avancer();`;
         await deliver(lb.posts.at(-1).id, PLATINUM);
         assert.equal((await worker.getFeedbackResult('alice', level(1))).score, 98);
         await worker.enqueueFeedbackJob(job('frank', level(1), CODE));
+        await deliverDueReuses();
         assert.equal((await worker.getFeedbackResult('frank', level(1))).score, 98);
     });
 
@@ -242,5 +263,26 @@ avancer();`;
         await worker.pollSubmitted({ now: Date.now() + 31000 });
         await submitPending();
         assert.equal(lb.posts.length, posts + 1);
+    });
+
+    it('refus du load balancer (clé désactivée) : l’élève est notifié, l’enseignant voit le détail', async () => {
+        lb.rejectPosts = { status: 403, code: 'key_disabled' };
+        const waiting = (await redis.lRange('feedback:queue:submitted', 0, -1)).length;
+        try {
+            await worker.enqueueFeedbackJob(job('jade', level(7), 'moveForward();\nturnLeft();'));
+            await submitPending();
+        } finally {
+            lb.rejectPosts = null;
+        }
+        assert.equal(await worker.getFeedbackStatus('jade', level(7)), 'error');
+        const event = emitted.at(-1);
+        assert.equal(event.event, 'feedback:error');
+        assert.equal(event.room, 'user:jade');
+        assert.equal(event.data.levelId, level(7));
+        assert.doesNotMatch(event.data.error, /HTTP|key_disabled/);
+        const result = await worker.getFeedbackResult('jade', level(7));
+        assert.match(result.detail, /403.*key_disabled/);
+        // Échec définitif : le job n'attend pas de résultat.
+        assert.equal((await redis.lRange('feedback:queue:submitted', 0, -1)).length, waiting);
     });
 });

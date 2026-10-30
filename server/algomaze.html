@@ -407,31 +407,68 @@
                 const socket = io({
                     auth: (cb) => cb({ token: window.AlgoAuth ? window.AlgoAuth.getToken() : localStorage.getItem('token') })
                 });
-                socket.on('feedback:ready', (payload) => {
-                    if (payload.levelId === currentLevelId) {
-                        displayFeedback('done', payload.result);
+                // Nombre de résultats reçus par niveau : une réponse arrivée PENDANT la requête
+                // /checkanswer ne doit pas être écrasée ensuite par « Évaluation IA en cours… ».
+                const feedbackEvents = {};
+
+                function onFeedbackReady(levelId, result) {
+                    feedbackEvents[levelId] = (feedbackEvents[levelId] || 0) + 1;
+                    if (levelId === currentLevelId) {
+                        stopPendingWatch();
+                        displayFeedback('done', result);
                     } else {
-                        showNotification('Feedback IA prêt pour le niveau ' + payload.levelId, 'success');
+                        showNotification('Feedback IA prêt pour le niveau ' + levelId, 'success');
                     }
                     // Met à jour le badge local pour ce niveau et rafraîchit la liste
                     // (l'élève voit son badge apparaître à côté du numéro de niveau).
-                    if (payload.result && payload.result.badge) {
-                        playerBadges[payload.levelId] = {
-                            badge: payload.result.badge,
-                            xp: payload.result.xp
+                    if (result && result.badge) {
+                        playerBadges[levelId] = {
+                            badge: result.badge,
+                            xp: result.xp
                         };
                         displayLevels(levelsIds);
                     }
                     // Met à jour le rang dans le header (géré par l'app shell).
                     if (window.AppShell) window.AppShell.refreshRank();
-                });
-                socket.on('feedback:error', (payload) => {
-                    if (payload.levelId === currentLevelId) {
-                        displayFeedback('error', { error: payload.error });
+                }
+
+                function onFeedbackError(levelId, error) {
+                    feedbackEvents[levelId] = (feedbackEvents[levelId] || 0) + 1;
+                    if (levelId === currentLevelId) {
+                        stopPendingWatch();
+                        displayFeedback('error', { error });
                     } else {
-                        showNotification('Évaluation IA en échec pour le niveau ' + payload.levelId, 'error');
+                        showNotification('Évaluation IA en échec pour le niveau ' + levelId, 'error');
                     }
-                });
+                }
+
+                // Filet de sécurité tant que « Évaluation IA en cours… » est affiché : relit
+                // l'état côté serveur, au cas où la notification WebSocket aurait été manquée
+                // (connexion coupée, onglet en veille).
+                let pendingWatch = null;
+                function stopPendingWatch() {
+                    if (pendingWatch) clearInterval(pendingWatch.timer);
+                    pendingWatch = null;
+                }
+                async function checkPending() {
+                    const watched = pendingWatch && pendingWatch.levelId;
+                    if (!watched) return;
+                    if (watched !== currentLevelId) return stopPendingWatch();
+                    const feedback = await fetchFeedback(watched);
+                    if (!pendingWatch || pendingWatch.levelId !== watched || !feedback) return;
+                    if (feedback.status === 'done') onFeedbackReady(watched, feedback.result);
+                    else if (feedback.status === 'error') onFeedbackError(watched, feedback.result && feedback.result.error);
+                }
+                function showPending(levelId) {
+                    displayFeedback('pending', null);
+                    stopPendingWatch();
+                    pendingWatch = { levelId, timer: setInterval(checkPending, 10000) };
+                }
+
+                socket.on('feedback:ready', (payload) => onFeedbackReady(payload.levelId, payload.result));
+                socket.on('feedback:error', (payload) => onFeedbackError(payload.levelId, payload.error));
+                // Après une reconnexion, les événements émis pendant la coupure sont perdus.
+                socket.on('connect', () => { checkPending(); });
 
                 function updateNextLevelButton() {
                     const btn = document.getElementById('next-level-button');
@@ -496,6 +533,7 @@
                     if (this.classList.contains('disabled')) return;
                     var code = editor.getValue();
                     var levelId = currentLevelId;
+                    var eventsBefore = feedbackEvents[levelId] || 0;
 
                     setActionButtonsDisabled(true);
                     try {
@@ -535,7 +573,10 @@
                             }
                             await fetchLevels();
                             updateNextLevelButton();
-                            displayFeedback('pending', null);
+                            // Le résultat a pu arriver pendant la requête : ne pas l'écraser.
+                            if ((feedbackEvents[levelId] || 0) === eventsBefore && levelId === currentLevelId) {
+                                showPending(levelId);
+                            }
                             // La pastille d'avancement du header (Niv. X/42) dépend de lastCompletedLevel.
                             if (window.AppShell) window.AppShell.refreshRank();
                         } else {
@@ -643,6 +684,7 @@
 
                 async function loadLevel(levelId, token) {
                     document.getElementById('next-level-button').classList.remove('visible');
+                    stopPendingWatch();
                     displayFeedback(null, null);
                     // Reset des signaux comportementaux pour la nouvelle session de niveau.
                     signals = freshSignals();
@@ -662,7 +704,9 @@
                         updateNextLevelButton();
 
                         const feedback = await fetchFeedback(levelId);
-                        if (feedback && feedback.status) {
+                        if (feedback && feedback.status === 'pending') {
+                            showPending(levelId);
+                        } else if (feedback && feedback.status) {
                             displayFeedback(feedback.status, feedback.result);
                         }
                     } catch (error) {

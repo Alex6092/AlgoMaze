@@ -11,7 +11,8 @@
     "enableBulkEvaluation": true,
     "aiReuse": {
         "enabled": true,
-        "similarity": 0.9
+        "similarity": 0.9,
+        "delaySeconds": [3, 8]
     },
     "cheatDetection": {
         "qualityJumpDelta": 30,

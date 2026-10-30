@@ -184,6 +184,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 - `enableBulkEvaluation` : active l'outil admin de rétro-évaluation IA des solutions sans feedback (sur la page `/progress`).
 - `aiReuse.enabled` : réutilise les évaluations existantes au lieu de rappeler l'IA (défaut : `true`).
 - `aiReuse.similarity` : similarité minimale (0 à 1, défaut `0.9`) avec une solution déjà évaluée **du même élève** pour lui réattribuer cette évaluation.
+- `aiReuse.delaySeconds` : délai `[min, max]` en secondes (défaut `[3, 8]`) avant de livrer une évaluation réutilisée, affichée comme une évaluation ordinaire.
 
 **Détection de triche** (`cheatDetection`) — seuils utilisés pour signaler une solution suspecte dans l'admin :
 - `qualityJumpDelta` / `qualityJumpMinSample` : différence de score IA jugée anormale par rapport à la médiane des `N` derniers niveaux.
@@ -200,6 +201,7 @@ Chaque solution validée est évaluée par un modèle de langage via le load bal
 1. `/checkanswer` met l'évaluation dans une file Redis ; le worker la soumet au load balancer (`POST /v1/jobs`, avec `X-End-User-ID: algomaze-<username>` et une clé d'idempotence) puis rend la main.
 2. À la fin de la génération, le load balancer appelle `POST /lb/callback?job=…`, signé HMAC-SHA256. AlgoMaze vérifie la signature, calcule le badge, met à jour EFE et notifie l'élève par WebSocket.
 3. Une relève toutes les 2 minutes interroge le load balancer pour les jobs dont le callback tarde (callback perdu, AlgoMaze redémarré) et resoumet un job perdu. Quota atteint ou file pleine : la soumission est reprogrammée.
+4. Côté élève, la page reçoit le résultat par WebSocket, sans rafraîchissement ; tant que « Évaluation IA en cours… » est affiché, elle relit aussi l'état toutes les 10 s (et après une reconnexion) au cas où la notification serait manquée. Un refus du load balancer (clé désactivée, modèle inconnu…) affiche à l'élève un message neutre ; le détail technique est visible dans `/solutions`. Un load balancer injoignable est réessayé jusqu'à 5 fois avant l'échec.
 
 **Anti-relance.** Le code est réduit à une forme canonique (sans commentaires ni espaces, variables renommées, `var`/`let`/`const` confondus). Une solution identique sous cette forme à une solution déjà évaluée **sur le même niveau** (quel que soit l'élève) reçoit la même évaluation, sans appel IA. Une solution très proche (`aiReuse.similarity`) d'une solution déjà évaluée **du même élève** reçoit l'évaluation la plus proche. Le modèle est appelé avec `temperature: 0` et un `seed` fixe. Changer de modèle (`LB_MODEL`) ou de prompt (`PROMPT_VERSION` dans `lbClient.js`) repart d'une mémoire vide.
 
