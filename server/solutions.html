@@ -142,7 +142,7 @@
                 return '<div class="feedback-block pending"><div class="fb-header"><span class="fb-badge pending">Évaluation IA en cours…</span></div></div>';
             }
             if (status === 'error') {
-                const msg = (result && result.error) || 'Erreur inconnue';
+                const msg = (result && (result.detail || result.error)) || 'Erreur inconnue';
                 return '<div class="feedback-block error">'
                     + '<div class="fb-header"><b>Évaluation IA en échec :</b> ' + escapeHtml(msg) + regenButtonHtml(username, levelId) + '</div>'
                     + '</div>';

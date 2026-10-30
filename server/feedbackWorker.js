@@ -44,9 +44,21 @@ const DONE_TTL_SECONDS = 7 * 86400;
 let io = null;
 const completing = new Set();
 
+// Message montré à l'élève quand l'évaluation échoue ; le détail technique reste
+// visible des enseignants (/solutions).
+// La page l'affiche après « L'évaluation IA a échoué : ».
+const STUDENT_ERROR = 'service momentanément indisponible. Ta solution est bien validée ; ton enseignant pourra relancer l\u2019évaluation.';
+
 function reuseConfig() {
     const c = (config && config.aiReuse) || {};
-    return { enabled: c.enabled !== false, similarity: c.similarity ?? 0.9 };
+    const [min, max] = Array.isArray(c.delaySeconds) ? c.delaySeconds : [3, 8];
+    return { enabled: c.enabled !== false, similarity: c.similarity ?? 0.9, delayMs: [min * 1000, max * 1000] };
+}
+
+// Délai avant de livrer une évaluation réutilisée, comme si le modèle l'avait recalculée.
+function reuseDelayMs() {
+    const [min, max] = reuseConfig().delayMs;
+    return Math.round(min + Math.random() * Math.max(0, max - min));
 }
 
 function newJobId() {
@@ -180,11 +192,12 @@ async function failJob(job, message) {
     console.error(`[feedbackWorker] job ${job.jobId} échec :`, message);
     await redisClient.set(statusKey(job.username, job.levelId), 'error');
     await redisClient.set(resultKey(job.username, job.levelId), JSON.stringify({
-        error: message,
+        error: STUDENT_ERROR,
+        detail: message,
         evaluatedAt: Date.now()
     }));
     if (io) {
-        io.to('user:' + job.username).emit('feedback:error', { levelId: job.levelId, error: message });
+        io.to('user:' + job.username).emit('feedback:error', { levelId: job.levelId, error: STUDENT_ERROR });
     }
     await forgetJob(job.jobId);
 }
@@ -195,7 +208,7 @@ async function failJob(job, message) {
 
 // Enfile un job d'évaluation. Si une évaluation est déjà en attente/en cours
 // pour ce (user, level), refuse silencieusement (anti-spam).
-// Si une évaluation réutilisable existe, elle est appliquée immédiatement, sans
+// Si une évaluation réutilisable existe, elle est livrée après un court délai, sans
 // appel au modèle ; `force` (régénération par un admin) l'ignore et la remplace.
 // Retourne true si enfilé ou évalué, false sinon.
 export async function enqueueFeedbackJob({ username, levelId, code, instructions, constraints, force = false }) {
@@ -204,22 +217,46 @@ export async function enqueueFeedbackJob({ username, levelId, code, instructions
         return false;
     }
 
-    if (!force) {
-        const reusable = await findReusableEvaluation(username, levelId, code);
-        if (reusable) {
-            await applyEvaluation(username, levelId, reusable.evaluation, {
-                reused: { match: reusable.match, similarity: reusable.similarity, fingerprint: reusable.fingerprint }
-            });
-            return true;
-        }
-    }
-
     const jobId = newJobId();
     const job = { jobId, username, levelId, code, instructions, constraints, queuedAt: Date.now(), submitAttempts: 0, resubmits: 0 };
+    const reusable = force ? null : await findReusableEvaluation(username, levelId, code);
+    if (reusable) {
+        // Livrée comme une évaluation ordinaire : statut « en cours », puis résultat
+        // poussé par WebSocket. Le job est aussi rangé parmi les jobs soumis pour que
+        // la relève le livre si le serveur redémarre avant l'échéance.
+        const delay = reuseDelayMs();
+        job.reuse = { evaluation: reusable.evaluation, match: reusable.match, similarity: reusable.similarity, fingerprint: reusable.fingerprint };
+        job.dueAt = Date.now() + delay;
+        await redisClient.set(jobKey(jobId), JSON.stringify(job));
+        await redisClient.set(statusKey(username, levelId), 'pending');
+        await redisClient.rPush(SUBMITTED_KEY, jobId);
+        setTimeout(() => {
+            deliverReuse(jobId).catch((err) => console.error(`[feedbackWorker] job ${jobId} (réutilisé) :`, err.message));
+        }, delay).unref();
+        return true;
+    }
+
     await redisClient.set(jobKey(jobId), JSON.stringify(job));
     await redisClient.set(statusKey(username, levelId), 'pending');
     await redisClient.rPush(PENDING_KEY, jobId);
     return true;
+}
+
+// Livre une évaluation réutilisée arrivée à échéance (minuteur ou relève).
+export async function deliverReuse(jobId) {
+    if (completing.has(jobId) || (await redisClient.get(doneKey(jobId)))) return 'duplicate';
+    completing.add(jobId);
+    try {
+        const job = await loadJob(jobId);
+        if (!job || !job.reuse) return 'unknown';
+        const { evaluation, ...reused } = job.reuse;
+        await applyEvaluation(job.username, job.levelId, evaluation, { reused });
+        await forgetJob(jobId);
+        await redisClient.set(doneKey(jobId), '1', { EX: DONE_TTL_SECONDS });
+        return 'done';
+    } finally {
+        completing.delete(jobId);
+    }
 }
 
 export async function getFeedbackStatus(username, levelId) {
@@ -321,6 +358,10 @@ export async function pollSubmitted({ now = Date.now(), staleMs = 5 * 60000 } = 
             const job = await loadJob(jobId);
             if (!job) {
                 await redisClient.lRem(SUBMITTED_KEY, 0, jobId);
+                continue;
+            }
+            if (job.reuse) {
+                if (job.dueAt <= now) await deliverReuse(jobId);
                 continue;
             }
             if (!job.lbJobId) {
