@@ -59,7 +59,7 @@ before(async () => {
             JWT_SECRET,
             MOODLE_SHARED_SECRET: MOODLE_SECRET,
             REDIS_USER: 'default', REDIS_PASSWORD: 'x', REDIS_HOST: '127.0.0.1', REDIS_PORT: '6379',
-            LMSTUDIO_URL: 'http://127.0.0.1:9/', LMSTUDIO_MODEL: 'fake'
+            LB_URL: 'http://127.0.0.1:9', LB_API_KEY: 'fake', LB_CALLBACK_SECRET: 'fake', LB_CALLBACK_URL: 'http://127.0.0.1/lb/callback', LB_MODEL: 'fake'
         },
         stdio: ['ignore', 'pipe', 'pipe']
     });

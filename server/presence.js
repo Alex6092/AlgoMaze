@@ -8,7 +8,7 @@
 
 import redisClient from './redisClient.js';
 import { computeUserRank, computeUserTotalXp, computeMastery } from './badges.js';
-import config from './config.json' assert { type: 'json' };
+import config from './config.json' with { type: 'json' };
 
 const presence = new Map(); // username -> state
 let _io = null;

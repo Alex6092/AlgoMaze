@@ -3,7 +3,7 @@
 // Le rang global est calculé comme la médiane glissante des XP des N derniers niveaux.
 
 import redisClient from './redisClient.js';
-import config from './config.json' assert { type: 'json' };
+import config from './config.json' with { type: 'json' };
 
 // Ordre de meilleur à pire pour faciliter le find().
 const BADGE_THRESHOLDS = [

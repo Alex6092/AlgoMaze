@@ -33,7 +33,7 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 - ✏️ **Éditeur de code** CodeMirror avec syntaxe JavaScript et fonctions de jeu pré-définies (`moveForward()`, `turnLeft()`, `collectGem()`, `toggleSwitch()`, `isBlocked()`, `isBlockedLeft()`, `isBlockedRight()`, `canCollectGem()`, `isOnSwitch()`, …).
 - ▶️ **Visualisateur pas-à-pas** : exécution animée avec pause, reprise et slider de navigation pour comprendre le déroulement d'une solution.
 - 🛡️ **Pré-check serveur** avant exécution locale : détecte les boucles infinies pour éviter de freezer le navigateur et sauvegarde le code (historique horodaté des 10 dernières tentatives).
-- 🤖 **Évaluation IA** asynchrone via LM Studio (sortie JSON structurée, score + feedback critère par critère), notification temps réel par WebSocket.
+- 🤖 **Évaluation IA** asynchrone via le load balancer d'inférence de l'établissement (sortie JSON structurée, score + feedback critère par critère), notification temps réel par WebSocket. Une solution déjà évaluée (même code réécrit, ou retouche mineure) reçoit la même évaluation sans nouvel appel : relancer ne permet pas de « tenter sa chance » pour un meilleur badge.
 - 🏅 **Badges** par niveau (Fer / Bronze / Argent / Or / Platine), **rang global** (Apprenti → Légende) calculé sur la médiane glissante des XP des derniers niveaux, et **niveau de maîtrise** cumulatif combinant avancement et qualité.
 - 📖 **Page documentation** `/docs` listant les fonctions du jeu et expliquant le système de progression (badges, rangs, maîtrise).
 - 🎯 **Tutoriel interactif** au premier lancement (spotlights et bulles), rappelable à tout moment via le bouton « ? ».
@@ -46,7 +46,7 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 - 🔴 **Dashboard live** (`/live`) : vue temps réel de la classe (qui est connecté, sur quel niveau, signaux suspects).
 - 🔍 **Explorateur de solutions** (`/solutions`) : consultation des solutions et feedbacks IA par utilisateur ou par niveau, avec historique horodaté.
 - 🚨 **Détection de triche** : capture de signaux comportementaux (collages, temps inactif, pertes de focus, captures d'écran, collages d'images) + détection de **similarité de code** (distance de Levenshtein normalisée) avec constellation et modal de diff côte-à-côte.
-- 🤖 **Régénération de feedback IA** : relance unitaire d'une évaluation ou évaluation en masse de toutes les solutions sans feedback (configurable).
+- 🤖 **Régénération de feedback IA** : relance unitaire d'une évaluation (nouvel appel IA forcé, qui remplace l'évaluation mémorisée) ou évaluation en masse de toutes les solutions sans feedback (configurable). Les évaluations réutilisées sont signalées dans `/solutions`.
 - 🎯 **Remontée des compétences vers EFE** : push automatique du niveau de maîtrise (vert/bleu/jaune/rouge/gris) vers l'API d'évaluation par compétences EFE après chaque évaluation IA qui change la couleur. Snapshot manuel sur un sous-ensemble de niveaux (ex. semaine 1 = 20 premiers niveaux) via `/progress`.
 
 ### Infrastructure
@@ -65,8 +65,9 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 │   ├── jwtConfig.js              JWT sliding session, résolution du token (Bearer + cookies)
 │   ├── usernames.js              Validation / normalisation des identifiants
 │   ├── rateLimit.js              Rate limiting Redis (login, checkanswer, precheck)
-│   ├── feedbackWorker.js         Worker queue Redis robuste (1 job IA à la fois, recovery au crash)
-│   ├── llmClient.js              Client LM Studio (response_format json_schema)
+│   ├── feedbackWorker.js         File Redis de soumission, callback / relève, réutilisation des évaluations
+│   ├── lbClient.js               Client du load balancer d'inférence (jobs async, signature des callbacks)
+│   ├── solutionFingerprint.js    Forme canonique, empreinte et similarité des solutions (anti-relance)
 │   ├── badges.js                 Mapping score→badge, médiane→rang, score de maîtrise
 │   ├── presence.js               Suivi temps réel des étudiants (dashboard /live)
 │   ├── cheatDetection.js         Signaux comportementaux + similarité de code (Levenshtein)
@@ -83,15 +84,15 @@ Une IA évalue ensuite la qualité de leur code (respect des contraintes pédago
 └── moodle_plugin/algomazevalidation/   Plugin Moodle (activité + SSO HMAC)
 ```
 
-**Stack** : Node.js 20+, Redis 7+, Express, Socket.IO, bcrypt, JWT, dotenv. CodeMirror et Quill côté front, vanilla CSS et JS (zéro framework). LM Studio (compatible API OpenAI) pour l'évaluation IA.
+**Stack** : Node.js 20+, Redis 7+, Express, Socket.IO, bcrypt, JWT, dotenv. CodeMirror et Quill côté front, vanilla CSS et JS (zéro framework). Load balancer d'inférence « Providence IA » (API compatible OpenAI, jobs asynchrones) pour l'évaluation IA.
 
 ## Installation
 
 ### Prérequis
 
-- Node.js ≥ 20
+- Node.js ≥ 20.10
 - Redis accessible
-- (Optionnel) LM Studio avec un modèle compatible chargé pour l'évaluation IA
+- (Optionnel) Accès au load balancer d'inférence pour l'évaluation IA (voir [Évaluation IA](#évaluation-ia-load-balancer))
 
 ### Mise en route
 
@@ -110,7 +111,7 @@ L'application est alors disponible sur http://localhost:3000 (port modifiable vi
 ```sh
 cd server
 npm run dev    # serveur avec un faux Redis en mémoire (comptes alice/alice123 et admin/admin123, 3 niveaux)
-npm test       # tests d'intégration de l'authentification (SSO, cookies, Bearer, validation des entrées)
+npm test       # authentification (SSO, cookies, Bearer), évaluations IA (load balancer simulé), empreintes
 ```
 
 `node test/sso-url.mjs <username> [level] [moodleid] [ageSeconds]` génère une URL SSO signée comme le ferait le plugin Moodle, pratique pour tester le flux à la main.
@@ -121,9 +122,13 @@ npm test       # tests d'intégration de l'authentification (SSO, cookies, Beare
 |---|---|
 | `JWT_SECRET` | Secret HMAC pour signer les JWT (chaîne aléatoire longue) |
 | `REDIS_USER`, `REDIS_PASSWORD`, `REDIS_HOST`, `REDIS_PORT` | Connexion Redis |
-| `LMSTUDIO_URL` | URL de l'API LM Studio (ex. `http://localhost:1234/v1/chat/completions`) |
-| `LMSTUDIO_MODEL` | Identifiant du modèle chargé dans LM Studio |
-| `LMSTUDIO_API_KEY` | *Optionnel* — clé envoyée en `Authorization: Bearer <key>` (utile si LM Studio est exposé derrière un reverse proxy avec auth). |
+| `LB_URL` | URL racine du load balancer d'inférence (ex. `https://ia.example.com`, sans `/v1`) |
+| `LB_API_KEY` | Clé d'API de l'application AlgoMaze sur le load balancer (mode `async`) |
+| `LB_MODEL` | Identifiant du modèle d'évaluation, tel que déclaré dans le catalogue du load balancer |
+| `LB_CALLBACK_URL` | URL publique du callback, joignable par le load balancer (ex. `https://algomaze.example.com/lb/callback`) |
+| `LB_CALLBACK_SECRET` | Secret de signature des callbacks de l'application AlgoMaze sur le load balancer |
+| `LB_MAX_TOKENS` | *Optionnel* — sortie maximale demandée (défaut : 2048), au plus la sortie maximale du modèle |
+| `FEEDBACK_POLL_SECONDS` | *Optionnel* — période de la relève de secours (défaut : 120 s) |
 | `MOODLE_SHARED_SECRET` | Secret HMAC partagé avec le plugin Moodle pour le SSO |
 | `SSO_MAX_AGE_SECONDS` | *Optionnel* — durée de validité d'un lien SSO signé (défaut : 600 s). Le plugin v1.4+ signe le lien au clic ; les versions antérieures le signaient au rendu de la page Moodle, d'où une fenêtre large. |
 | `PORT` | *Optionnel* — port d'écoute (défaut : 3000). |
@@ -177,6 +182,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 **Évaluation IA**
 - `enableBulkEvaluation` : active l'outil admin de rétro-évaluation IA des solutions sans feedback (sur la page `/progress`).
+- `aiReuse.enabled` : réutilise les évaluations existantes au lieu de rappeler l'IA (défaut : `true`).
+- `aiReuse.similarity` : similarité minimale (0 à 1, défaut `0.9`) avec une solution déjà évaluée **du même élève** pour lui réattribuer cette évaluation.
 
 **Détection de triche** (`cheatDetection`) — seuils utilisés pour signaler une solution suspecte dans l'admin :
 - `qualityJumpDelta` / `qualityJumpMinSample` : différence de score IA jugée anormale par rapport à la médiane des `N` derniers niveaux.
@@ -185,6 +192,25 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 - `focusLossThreshold` : nombre de pertes de focus toléré.
 - `printScreenThreshold` / `imagePasteThreshold` : tolérance pour captures d'écran et collages d'images.
 - `similarityThreshold` / `similarityBaselineMargin` / `similarityMinPairs` : paramètres de la détection de code similaire entre étudiants (Levenshtein normalisé, baseline cohorte).
+
+## Évaluation IA (load balancer)
+
+Chaque solution validée est évaluée par un modèle de langage via le load balancer d'inférence de l'établissement (dépôt `loadbalancer-ai-inference-server`), qui gère la file d'attente et la capacité des serveurs :
+
+1. `/checkanswer` met l'évaluation dans une file Redis ; le worker la soumet au load balancer (`POST /v1/jobs`, avec `X-End-User-ID: algomaze-<username>` et une clé d'idempotence) puis rend la main.
+2. À la fin de la génération, le load balancer appelle `POST /lb/callback?job=…`, signé HMAC-SHA256. AlgoMaze vérifie la signature, calcule le badge, met à jour EFE et notifie l'élève par WebSocket.
+3. Une relève toutes les 2 minutes interroge le load balancer pour les jobs dont le callback tarde (callback perdu, AlgoMaze redémarré) et resoumet un job perdu. Quota atteint ou file pleine : la soumission est reprogrammée.
+
+**Anti-relance.** Le code est réduit à une forme canonique (sans commentaires ni espaces, variables renommées, `var`/`let`/`const` confondus). Une solution identique sous cette forme à une solution déjà évaluée **sur le même niveau** (quel que soit l'élève) reçoit la même évaluation, sans appel IA. Une solution très proche (`aiReuse.similarity`) d'une solution déjà évaluée **du même élève** reçoit l'évaluation la plus proche. Le modèle est appelé avec `temperature: 0` et un `seed` fixe. Changer de modèle (`LB_MODEL`) ou de prompt (`PROMPT_VERSION` dans `lbClient.js`) repart d'une mémoire vide.
+
+**Configuration côté load balancer** (administration du load balancer) :
+
+1. Déclarer le modèle d'évaluation au catalogue et au moins un serveur qui le sert.
+2. Créer une application « AlgoMaze » avec la destination de callback `https://<algomaze>/lb/`, et copier son secret de callback dans `LB_CALLBACK_SECRET`.
+3. Créer une clé d'API limitée au mode `async` et la copier dans `LB_API_KEY`.
+4. Vérifier que le load balancer peut joindre `https://<algomaze>/lb/callback` (reverse proxy, pare-feu). Sinon, la relève récupère tout de même les résultats, avec jusqu'à quelques minutes de retard.
+
+Les quotas par utilisateur du load balancer s'appliquent aux élèves (`algomaze-<username>`).
 
 ## Plugin Moodle (SSO)
 

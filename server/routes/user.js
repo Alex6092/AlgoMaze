@@ -6,7 +6,7 @@ import { isValidUsername, normalizeUsername, escapeKeyPattern } from '../usernam
 import { loginLimiter } from '../rateLimit.js';
 import { recordEvent as recordPresenceEvent } from '../presence.js';
 import redisClient from '../redisClient.js';
-import config from '../config.json' assert { type: 'json' };
+import config from '../config.json' with { type: 'json' };
 
 const PASSWORD_MAX_LENGTH = 200;
 

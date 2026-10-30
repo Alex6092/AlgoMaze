@@ -164,6 +164,12 @@
             if (jump && jump.jump) {
                 html += '<span class="quality-jump-flag" title="Score nettement supérieur à la médiane de l\'élève (' + jump.baselineMedian + ' XP) — à examiner.">⚠️ Saut de qualité +' + jump.delta + ' XP</span>';
             }
+            if (result && result.reused) {
+                const how = result.reused.match === 'identical'
+                    ? 'solution identique (après normalisation) déjà évaluée sur ce niveau'
+                    : 'solution à ' + Math.round(result.reused.similarity * 100) + ' % identique à une solution déjà évaluée de l\'élève';
+                html += '<span class="fb-badge" title="Aucun nouvel appel IA : ' + escapeHtml(how) + '.">Évaluation réutilisée</span>';
+            }
             html += regenButtonHtml(username, levelId);
             html += '</div>';
             html += '<div class="fb-text">' + escapeHtml(txt) + '</div>';
