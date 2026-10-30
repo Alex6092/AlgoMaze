@@ -3,7 +3,8 @@
 // l'attention de l'enseignant qui décide ensuite (idéalement par dialogue avec l'étudiant).
 
 import redisClient from './redisClient.js';
-import config from './config.json' assert { type: 'json' };
+import { levenshtein } from './solutionFingerprint.js';
+import config from './config.json' with { type: 'json' };
 
 function cfg() {
     return (config && config.cheatDetection) || {};
@@ -77,31 +78,6 @@ export function interpretSignals(signals, codeLength) {
 // ---------------------------------------------------------------------------
 // 3) Similarité inter-élèves
 // ---------------------------------------------------------------------------
-// Distance de Levenshtein avec normalisation O(min(m,n)) en mémoire.
-function levenshtein(a, b) {
-    if (a === b) return 0;
-    if (!a.length) return b.length;
-    if (!b.length) return a.length;
-    // S'assurer que b est le plus court pour minimiser la mémoire.
-    if (a.length < b.length) { const t = a; a = b; b = t; }
-    const prev = new Array(b.length + 1);
-    const curr = new Array(b.length + 1);
-    for (let j = 0; j <= b.length; j++) prev[j] = j;
-    for (let i = 1; i <= a.length; i++) {
-        curr[0] = i;
-        for (let j = 1; j <= b.length; j++) {
-            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-            curr[j] = Math.min(
-                curr[j - 1] + 1,         // insertion
-                prev[j] + 1,              // deletion
-                prev[j - 1] + cost        // substitution
-            );
-        }
-        for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
-    }
-    return prev[b.length];
-}
-
 // Similarité normalisée entre 0 (rien en commun) et 1 (identique).
 function similarity(a, b) {
     const norm = s => String(s || '').replace(/\s+/g, ' ').trim();

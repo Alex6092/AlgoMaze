@@ -17,8 +17,9 @@ import {
     setTokenCookie, clearTokenCookie, loadUser, requireUser, requireAdmin
 } from './jwtConfig.js';
 import { isValidUsername, normalizeUsername } from './usernames.js';
-import config from './config.json' assert { type: 'json' };
-import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker } from './feedbackWorker.js';
+import config from './config.json' with { type: 'json' };
+import { enqueueFeedbackJob, getFeedbackStatus, getFeedbackResult, startFeedbackWorker, handleCallback } from './feedbackWorker.js';
+import { missingConfig as missingLbConfig } from './lbClient.js';
 import { computeUserRank, getUserBadges, computeMastery, computeUserTotalXp, computeEfeCouleur } from './badges.js';
 import { isEfeConfigured, pushNote as efePushNote, ping as efePing, getCompetenceCode } from './efeClient.js';
 import { interpretSignals, analyzeLevelSimilarity } from './cheatDetection.js';
@@ -29,6 +30,18 @@ const app = express();
 // au lieu de l'IP du proxy. Indispensable pour que le rate-limiting fonctionne par IP,
 // et pour que req.secure reflète X-Forwarded-Proto (cookie Secure en HTTPS).
 app.set('trust proxy', 1);
+// Callback signé du load balancer d'inférence (résultat d'une évaluation IA).
+// Déclaré avant express.json() : la signature porte sur le corps brut, octet pour octet.
+// Pas d'authentification utilisateur : seule la signature HMAC fait foi.
+app.post('/lb/callback', express.raw({ type: '*/*', limit: '20mb' }), async (req, res) => {
+    try {
+        const jobId = typeof req.query.job === 'string' ? req.query.job : null;
+        res.status(await handleCallback(jobId, req.body, req.headers)).end();
+    } catch (error) {
+        console.log("[ERROR] /lb/callback " + error);
+        res.status(500).end();
+    }
+});
 app.use(express.json());
 // Origine autorisée pour CORS / Socket.IO. En déploiement mono-origine (Apache devant
 // Node), l'application est servie depuis la même origine et ce réglage est sans effet.
@@ -754,7 +767,8 @@ app.get('/admin/missing-feedbacks', async (req, res) => {
 
 // Enfile une évaluation IA pour chaque solution stockée n'ayant pas de feedback.
 // Re-vérifie la validité fonctionnelle (tryRunUserCode) pour ne pas envoyer à l'IA
-// une solution qui ne marche pas. La queue worker traite les jobs un à un.
+// une solution qui ne marche pas. Une évaluation réutilisable (solution identique
+// déjà évaluée) est appliquée sans appel IA ; les autres partent au load balancer.
 app.post('/admin/bulk-evaluate', async (req, res) => {
     try {
         const ctx = await requireAdmin(req, res);
@@ -955,12 +969,14 @@ app.post('/admin/regenerate-feedback/:username/:levelId', async (req, res) => {
         }
         const levelData = JSON.parse(levelRaw);
 
+        // force : nouvel appel IA même si une évaluation réutilisable existe ; le résultat la remplace.
         const enqueued = await enqueueFeedbackJob({
             username,
             levelId,
             code,
             instructions: levelData.instructions || '',
-            constraints: levelData.constraints || ''
+            constraints: levelData.constraints || '',
+            force: true
         });
 
         if (!enqueued) {
@@ -1046,6 +1062,10 @@ httpServer.listen(port, () => {
     console.log("AlgoMaze API running on port " + port);
 });
 
+const missingLb = missingLbConfig();
+if (missingLb.length) {
+    console.warn('[feedbackWorker] Évaluation IA non configurée, variables manquantes : ' + missingLb.join(', '));
+}
 await startFeedbackWorker(io);
 
 // Utils functions :

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node test/dev-server.mjs",
-    "test": "node --test test/auth.test.mjs"
+    "test": "node --test --test-concurrency=1 test/auth.test.mjs test/fingerprint.test.mjs test/lb.test.mjs"
   },
   "author": "Alexandre Gremont",
   "license": "ISC",

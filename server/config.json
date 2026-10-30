@@ -9,6 +9,10 @@
         "tresBonne": 70
     },
     "enableBulkEvaluation": true,
+    "aiReuse": {
+        "enabled": true,
+        "similarity": 0.9
+    },
     "cheatDetection": {
         "qualityJumpDelta": 30,
         "qualityJumpMinSample": 3,
