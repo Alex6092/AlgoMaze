@@ -1,14 +1,14 @@
 {
-    "allowRegistration": true,
+    "allowRegistration": false,
     "maxSolutionHistory": 10,
     "slidingMedianWindow": 10,
     "totalLevels": 42,
     "masteryThresholds": {
-        "fragile": 20,
-        "satisfaisante": 40,
-        "tresBonne": 70
+        "fragile": 40,
+        "satisfaisante": 70,
+        "tresBonne": 90
     },
-    "enableBulkEvaluation": true,
+    "enableBulkEvaluation": false,
     "aiReuse": {
         "enabled": true,
         "similarity": 0.9
